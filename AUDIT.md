@@ -40,19 +40,19 @@ exposing any new AI surface. The login core has no direct unit tests (S11).
 **Compliance is strong on paper, soft in enforcement.** Audit logging is
 granular and defaults on (C1), but the trail lives in the same database it
 audits, is admin-disableable, and has no retention schedule (S10/C2) — enable
-the existing ATNA/external export for any real deployment. Existing
-integrations (Twilio, payment processors, Direct messaging) already imply a BAA
-register (C4); an LLM provider joins that list, it does not start it.
+the ATNA/external export in real deployments. Existing integrations (Twilio,
+payments, Direct messaging) already imply a BAA register (C4); an LLM provider
+joins that list, not starts it.
 
 **Performance and architecture point the same direction.** The legacy tier pays
 an uncached per-request bootstrap tax multiplied by the frameset UI (P1/P2),
 with unbounded queries on the legacy service path (P4). The **FHIR/REST surface
 is the one validated, paginated, uuid-resolved read path**, and custom modules
 + events + `RestApiCreateEvent` are the sanctioned no-core-edit extension
-seams. The consequence for the agent, carried into `ARCHITECTURE.md`: read only
-via FHIR/REST as the physician, data-trust before the model, one synthesis
-pass, per-route default-deny, and S1–S3 closed with BAA + ZDR + disclosure
-logging in place before the first PHI-bearing request leaves the building.
+seams. The consequence, carried into `ARCHITECTURE.md`: read only via
+FHIR/REST as the physician, data-trust before the model, one synthesis pass,
+per-route default-deny, and S1–S3 closed — with BAA + ZDR + disclosure logging
+in place before the first PHI-bearing request leaves.
 
 ---
 
