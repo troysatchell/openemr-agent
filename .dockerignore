@@ -9,3 +9,8 @@
 # host-only local dev artifacts
 tmp/
 *.log
+# local secret env files — must never enter the build context
+# (.env.example is a tracked template and is deliberately kept)
+/.env
+/.env.*
+!/.env.example
