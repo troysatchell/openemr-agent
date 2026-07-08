@@ -18,6 +18,7 @@
 require_once "../vendor/autoload.php";
 
 use OpenEMR\BC\FallbackRouter;
+use OpenEMR\Common\Http\ApiErrorResponseFormatter;
 use OpenEMR\Common\Http\HttpRestRequest;
 use OpenEMR\RestControllers\ApiApplication;
 use Symfony\Component\HttpFoundation\Response;
@@ -38,8 +39,7 @@ try {
         header('Content-Type: application/json');
         http_response_code(Response::HTTP_INTERNAL_SERVER_ERROR);
     }
-    die(json_encode([
-        'error' => 'An error occurred while processing the request.',
-        'message' => $e->getMessage(),
-    ]));
+    // S1 (AUDIT.md): the exception detail stays in the server log above;
+    // unauthenticated callers get only the generic body.
+    die(json_encode(ApiErrorResponseFormatter::format($e)));
 }
