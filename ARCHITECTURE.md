@@ -2,56 +2,59 @@
 
 ## Executive Summary
 
-We are building a **clinical co-pilot**: a **multi-turn, tool-using conversational agent** — not a dashboard — embedded in this OpenEMR instance that, in the physician's ~90-second window between patients, **opens with a glanceable snapshot** (who the patient is, what changed since the last visit, what must not be missed, and the thread from last time) **and then answers follow-ups grounded in the chart** (every capability traces to a use case in `USERS.md` §5, UC1–UC5). It is deliberately **not** an autonomous
-decision-maker — the agent orients, the physician decides, every output is
-human-reviewed. This single framing drives both **adoption** (our user, Dr. Ellis
-Tran — a still-*unvalidated* persona — will not trust a black box) and **regulatory
-posture** (a reviewable-basis clinical decision support tool is more likely to stay
-off the FDA device line than one that just tells him what to do).
+We are building a **clinical co-pilot**: a **multi-turn, tool-using
+conversational agent** — not a dashboard — embedded in this OpenEMR instance.
+In the physician's ~90-second window between patients it **opens with a
+glanceable snapshot** (who the patient is, what changed since last visit, what
+must not be missed, the thread from last time), **then answers follow-ups
+grounded in the chart**; every capability traces to a use case in `USERS.md`
+§5 (UC1–UC5). It is deliberately **not** an autonomous decision-maker — the
+agent orients, the physician decides. One framing drives both **adoption**
+(Dr. Ellis Tran — a still-*unvalidated* persona — will not trust a black box)
+and **regulatory posture** (reviewable-basis clinical decision support is
+likelier to stay off the FDA device line).
 
-**Where it lives (Decision 1).** The agent runs **in-repo, as an OpenEMR custom
-module** — registered through the sanctioned module/event system, no core edits.
-The *orchestration* (retrieval, data-trust, synthesis, prompt assembly) lives in
-the module; only *model inference* is external. We chose in-repo over a standalone
-service because it **reuses OpenEMR's authentication, ACL, session, and data
-access** instead of re-implementing them, avoids a second store of patient data,
-and reaches a defensible MVP fastest. Tradeoff: we inherit the PHP runtime and
-cannot scale inference independently — accepted for v1, mitigated by keeping the
-orchestration a cleanly extractable service.
+**Where it lives (Decision 1).** In-repo, as an **OpenEMR custom module**
+registered through the sanctioned module/event system — no core edits.
+Orchestration (retrieval, data-trust, synthesis, prompt assembly) lives in the
+module; only model inference is external. In-repo beats a standalone service
+because it **reuses OpenEMR's authentication, ACL, session, and data access**,
+avoids a second store of patient data, and reaches a defensible MVP fastest.
+Tradeoff: we inherit the PHP runtime and cannot scale inference independently
+— accepted for v1, mitigated by keeping orchestration cleanly extractable.
 
-**How it accesses data (Decision 2).** The agent reads **only through the
-FHIR/REST surface** — the one validated, uuid-resolved read path — never raw legacy
-tables. Because the audit showed the datastore does not defend its own integrity
-(strict mode off **D0**, empty-string-as-missing **D1**, duplicate patients
-**D8**, stale-med flags **D10**), a **data-trust layer** resolves identity, filters
-inactive rows, dedupes, and normalizes **before** any data reaches the model, and a
-**single synthesis pass** reconciles meds, labs, and allergies so cross-source
-interactions can't fall through a seam (**D9**). Tradeoff: latency and engineering
-cost vs. correctness — non-negotiable here.
+**How it accesses data (Decision 2).** Reads go **only through the FHIR/REST
+surface** — the one validated, uuid-resolved read path — never raw legacy
+tables. Because the datastore does not defend its own integrity (strict mode
+off **D0**, empty-string-as-missing **D1**, duplicate patients **D8**,
+stale-med flags **D10**), a **data-trust layer** resolves identity, dedupes,
+filters, and normalizes **before** the model, and a **single synthesis pass**
+reconciles meds, labs, and allergies so cross-source interactions can't fall
+through a seam (**D9**). Tradeoff: latency and engineering cost vs.
+correctness — non-negotiable here.
 
-**Authorization (Decision 3).** The agent acts as the physician **by delegation, not
-impersonation** — its authority is always his own, confined to his ACL/facility scope,
-never a privileged service account, so it can only surface what he is already entitled
-to see and cannot become an exfiltration path. Delegation (not *"runs inside his live
-session"*) is what keeps that claim true when he is **offline**; for v1 we scope
-pre-charting to his live session and defer unattended overnight batch (§4). The **LLM
-sits outside the trust boundary**: patient data crossing to it is a logged,
-minimum-necessary disclosure under a signed BAA with zero data retention (**C5**).
+**Authorization (Decision 3).** The agent acts as the physician **by
+delegation, not impersonation** — its authority is always his own, confined to
+his ACL/facility scope, never a privileged service account, so it can only
+surface what he could already see. Delegation (not *"runs inside his live
+session"*) keeps that true when he is **offline**; v1 scopes pre-charting to
+his live session and defers unattended overnight batch (§4). The **LLM sits
+outside the trust boundary**: every crossing is a logged, minimum-necessary
+disclosure under a signed BAA with zero data retention (**C5**).
 
-**Risk posture (Decision 4).** Content can be wrong in **two directions**, each
-needing its own mechanism. **Provenance** on every surfaced claim defends what *is*
-shown (a wrong fact he can catch) and satisfies FDA reviewability — but cannot
-reach what was never surfaced. So a **clinical-accuracy gate** defends what could be
-*missed*: correctness is **measured before delivery** against a clinician-
-adjudicated golden-chart set, with a **zero-miss bar on a deterministic critical
-subset enforced in code**, not left to model judgment. Compliance gates the LLM
-boundary; breach-precursor gaps (**S1/S2/S3**) close before exposure.
+**Risk posture (Decision 4).** Content can be wrong in **two directions**.
+**Provenance** on every surfaced claim defends what *is* shown — a wrong fact
+he can catch — and satisfies FDA reviewability, but cannot reach what was
+never surfaced. So a **clinical-accuracy gate** defends against omission:
+correctness is **measured before delivery** against a human-adjudicated
+golden-chart set (founder in v1), with a **zero-miss bar on a deterministic
+critical subset enforced in code**, not model judgment. Breach-precursor gaps
+(**S1/S2/S3**) close before exposure.
 
-**Biggest open risk:** the persona is unvalidated, and (decided 2026-07-07) there
-is no external design-partner internist — **Phase 0 is run in-house**: we create
-the design-partner function ourselves and build against the hypothesis with that
-limitation named. No practicing clinician has reviewed this; real-clinician review
-is the highest-leverage upgrade when available.
+**Biggest open risk:** the persona is unvalidated and (decided 2026-07-07)
+there is no external design-partner internist — **Phase 0 validation is run
+in-house**, the no-clinician limitation named; real-clinician review is the
+highest-leverage upgrade when available.
 
 ---
 

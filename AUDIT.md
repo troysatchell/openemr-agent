@@ -3,15 +3,14 @@
 ## One-page summary — the findings that matter most
 
 **The one gating finding (C5).** There is **no PHI→LLM flow in this codebase
-today** — the only "AI" footprint is developer-time code generation, and source
-code is not PHI. The moment the co-pilot sends its first patient-bearing
-prompt, obligations attach that cannot be retrofitted: a **signed BAA with zero
-data retention**, **minimum-necessary** prompt design, and **every disclosure
-logged** in the audit trail under a new external-AI category (which does not
-exist yet — it must be built with the feature). Reliable de-identification is
-**not** an available escape hatch here: identity is dual and unreliable (`pid`
-plus a nullable, batch-backfilled `uuid` — D7), and identifiers hide in free
-text (D1/D6), so a scrubbed prompt is not a de-identified one. C5 gates every
+today** (the only "AI" footprint is developer-time code generation). The
+co-pilot's first patient-bearing prompt attaches obligations that cannot be
+retrofitted: a **signed BAA with zero data retention**, **minimum-necessary**
+prompt design, and **every disclosure logged** in the audit trail under a new
+external-AI category (which must be built with the feature).
+De-identification is **not** an escape hatch: identity is dual and unreliable
+(`pid` plus a nullable, batch-backfilled `uuid` — D7) and identifiers hide in
+free text (D1/D6) — a scrubbed prompt is not de-identified. C5 gates every
 PHI feature.
 
 **The datastore does not defend its own integrity.** Every connection opens
@@ -22,23 +21,21 @@ On top of that root cause: 318 columns are `NOT NULL DEFAULT ''`, so "present"
 `pid`s (D8); discontinued meds sit behind an `activity` flag and look current
 on a naive read (D10); and meds/problems/allergies share one polymorphic,
 free-text-prone table while labs live elsewhere, so drug–drug / drug–lab
-dangers exist only *across* sources (D9). For an AI co-pilot these are not
-hygiene trivia — they are the exact mechanism by which a fluent summary
-launders wrong data into confident clinical prose. The mitigation is
-architectural: normalize, dedupe, and filter **before** the model, and
-reconcile meds × labs × allergies in **one** synthesis pass.
+dangers exist only *across* sources (D9). These are the exact mechanism by
+which a fluent summary launders wrong data into confident clinical prose. The
+mitigation is architectural: normalize, dedupe, and filter **before** the
+model, and reconcile meds × labs × allergies in **one** synthesis pass.
 
 **Security risk concentrates in omission, not broken primitives.** The modern
-auth core is better than its reputation (parameterized queries, lockout with a
-timing-attack defense, HMAC CSRF, `sodium_memzero`). The dangerous patterns are
-structural: auth enforcement hinges on the ambient `$ignoreAuth` global (S4);
-API-route authorization is a hand-repeated per-route call with **no
-default-deny gate** (S5), so an omitted check is an open PHI endpoint; the API
-error path returns `$e->getMessage()` to unauthenticated callers (S1); and
-session-cookie hardening ships off — `HttpOnly` explicitly disabled on the core
-session, `cookie_secure` defaulting false (S2/S3). S1–S3 are **breach
-precursors** (C3): close them before exposing any new AI surface. The
-security-critical login core has no direct unit tests (S11).
+auth core is solid (parameterized queries, lockout with a timing-attack
+defense, HMAC CSRF). The dangerous patterns are structural: auth enforcement
+hinges on the ambient `$ignoreAuth` global (S4); API-route authorization is a
+hand-repeated per-route call with **no default-deny gate** (S5), so an omitted
+check is an open PHI endpoint; the API error path returns `$e->getMessage()`
+to unauthenticated callers (S1); and session-cookie hardening ships off —
+`HttpOnly` explicitly disabled on the core session, `cookie_secure` defaulting
+false (S2/S3). S1–S3 are **breach precursors** (C3): close them before
+exposing any new AI surface. The login core has no direct unit tests (S11).
 
 **Compliance is strong on paper, soft in enforcement.** Audit logging is
 granular and defaults on (C1), but the trail lives in the same database it
