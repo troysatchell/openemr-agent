@@ -79,13 +79,22 @@ class SessionConfigurationBuilder
     }
 
     // Preset configurations for different session types
-    /** @return array<string, mixed> */
-    public static function forCore(string $webRoot = '', bool $readOnly = true): array
+    /**
+     * S2/S3 (AUDIT.md): the core cookie keeps the class-default HttpOnly=true
+     * (a script-readable session id is an XSS-to-session-theft precursor) and
+     * is Secure by default — plain-HTTP deployments must opt out explicitly
+     * via $secure=false (fail closed, not open). Known cost of HttpOnly: the
+     * legacy multi-window re-login restore (library/restoreSession.php reads
+     * document.cookie) silently degrades; single-login flows are unaffected.
+     *
+     * @return array<string, mixed>
+     */
+    public static function forCore(string $webRoot = '', bool $readOnly = true, bool $secure = true): array
     {
         return (new self())
             ->setName(SessionUtil::CORE_SESSION_ID)
             ->setCookiePath((!empty($webRoot)) ? $webRoot . '/' : '/')
-            ->setCookieHttpOnly(false)
+            ->setCookieSecure($secure)
             ->setReadOnly($readOnly)
             ->build();
     }
@@ -111,12 +120,17 @@ class SessionConfigurationBuilder
             ->build();
     }
 
-    /** @return array<string, mixed> */
-    public static function forPortal(string $webRoot = '', bool $readOnly = true): array
+    /**
+     * S3 (AUDIT.md): Secure by default; see forCore() for the rationale.
+     *
+     * @return array<string, mixed>
+     */
+    public static function forPortal(string $webRoot = '', bool $readOnly = true, bool $secure = true): array
     {
         return (new self())
             ->setName(SessionUtil::PORTAL_SESSION_ID)
             ->setCookiePath($webRoot !== '' ? $webRoot . '/' : '/')
+            ->setCookieSecure($secure)
             ->setReadOnly($readOnly)
             ->build();
     }

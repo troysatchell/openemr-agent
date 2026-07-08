@@ -69,8 +69,8 @@ class HttpSessionFactory implements SessionFactoryInterface
         return match ($this->sessionType) {
             self::SESSION_TYPE_OAUTH => SessionConfigurationBuilder::forOAuth($this->web_root),
             self::SESSION_TYPE_API => SessionConfigurationBuilder::forApi($this->web_root),
-            self::SESSION_TYPE_CORE => SessionConfigurationBuilder::forCore($this->web_root, $this->readOnly),
-            self::SESSION_TYPE_PORTAL => SessionConfigurationBuilder::forPortal($this->web_root, $this->readOnly),
+            self::SESSION_TYPE_CORE => SessionConfigurationBuilder::forCore($this->web_root, $this->readOnly, $this->request->isSecure()),
+            self::SESSION_TYPE_PORTAL => SessionConfigurationBuilder::forPortal($this->web_root, $this->readOnly, $this->request->isSecure()),
             default => throw new \InvalidArgumentException("Unknown session type: {$this->sessionType}"),
         };
     }
