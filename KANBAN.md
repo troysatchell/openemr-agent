@@ -19,21 +19,21 @@ Phase 3 read-only snapshot demo.
 
 ### Phase 1 — Compliance & security *(TDD run 2026-07-08 — all coding tickets green; awaiting human review of flagged items)*
 - [ ] LLM procurement decision: BAA + zero data retention (Anthropic direct vs. cloud BAA e.g. Bedrock) (C5) — **human decision, only open coding-run blocker for Phase 1 Done**
-- [x] Minimum-necessary disclosure policy — enforcement done `bcfa44b` (payload + Disclosure born together; undisclosed sends unrepresentable). **Review:** `DraftPolicies::v1()` field lists are DRAFT pending human sign-off
-- [x] Disclosure logging: `EventAuditLogger` external-AI category (C1/C5) — done `d761ad3` (12/12); production `forEventAuditLogger()` sink pending live-stack verification
-- [x] Close S1 (error leak), S2/S3 (cookie hardening) — done `a5f298c`; live-verified over HTTP+HTTPS incl. full login smoke. **Review:** S2 knowingly degrades legacy multi-window re-login restore (restoreSession.php reads document.cookie); single-login unaffected
-- [x] `oe-module-copilot` skeleton: module registration, event subscriptions, routes via `RestApiCreateEvent`, default-deny authz wrapper on every route (S5) — done `551eafa`; module not yet DB-registered, live route dispatch untested until enablement
-- [x] FHIR/REST read path as the physician's own session (S4/S6) — done `bcfa44b` (typed PhysicianContext; anonymous reads unrepresentable); DB-backed adapter pending live-stack smoke
+- [x] Minimum-necessary disclosure policy — enforcement done `892db37` (payload + Disclosure born together; undisclosed sends unrepresentable). **Review:** `DraftPolicies::v1()` field lists are DRAFT pending human sign-off
+- [x] Disclosure logging: `EventAuditLogger` external-AI category (C1/C5) — done `9781399` (12/12); production `forEventAuditLogger()` sink pending live-stack verification
+- [x] Close S1 (error leak), S2/S3 (cookie hardening) — done `87bd9b3`; live-verified over HTTP+HTTPS incl. full login smoke. **Review:** S2 knowingly degrades legacy multi-window re-login restore (restoreSession.php reads document.cookie); single-login unaffected
+- [x] `oe-module-copilot` skeleton: module registration, event subscriptions, routes via `RestApiCreateEvent`, default-deny authz wrapper on every route (S5) — done `2a242a6`; module not yet DB-registered, live route dispatch untested until enablement
+- [x] FHIR/REST read path as the physician's own session (S4/S6) — done `e3cbab2` (typed PhysicianContext; anonymous reads unrepresentable); DB-backed adapter pending live-stack smoke
 
 ### Phase 2 — Data-trust substrate *(all coding tickets green; Done gate waits on Phase 1 review + detector-table sign-off)*
-- [x] Identity resolution / dedupe (D7/D8) — green `551eafa`; conservative unknown-component rule
-- [x] Activity/deleted filters (D10) — green `551eafa`; three-state currency, Unknown surfaced
-- [x] Normalizers: empty-string (D1), booleans (D4), dates (D0/D6) — green `551eafa`
-- [x] One-pass synthesis (D9) — done `d761ad3` (9/9); provenance SourceRefs on every item
-- [x] Deterministic critical-subset detectors — done `3ec7d05` (35/35; unknown → unevaluable, never silent). **Review:** PanicThresholds/InteractionPairs/AllergyClassMap `draftV1()` clinical tables are DRAFT pending human sign-off
-- [x] Golden-chart harness + CI accuracy gate — done `d51e546` (21/21 + `clinical-accuracy-gate.yml`, auto-required via all-checks-passed). Gate reports **NOT ARMED** until Phase 0 delivers adjudicated labels; synthetic fixtures never arm or fail it
+- [x] Identity resolution / dedupe (D7/D8) — green `3065256`; conservative unknown-component rule
+- [x] Activity/deleted filters (D10) — green `a644256`; three-state currency, Unknown surfaced
+- [x] Normalizers: empty-string (D1), booleans (D4), dates (D0/D6) — green `27a6fc6`
+- [x] One-pass synthesis (D9) — done `001eaa0` (9/9); provenance SourceRefs on every item
+- [x] Deterministic critical-subset detectors — done `faeb658` (35/35; unknown → unevaluable, never silent). **Review:** PanicThresholds/InteractionPairs/AllergyClassMap `draftV1()` clinical tables are DRAFT pending human sign-off
+- [x] Golden-chart harness + CI accuracy gate — done `b74cddf` (21/21 + `clinical-accuracy-gate.yml`, auto-required via all-checks-passed). Gate reports **NOT ARMED** until Phase 0 delivers adjudicated labels; synthetic fixtures never arm or fail it
 
-**Run notes (2026-07-08):** frozen-test TDD loop — orchestrator authored+froze all tests (`af7d708`, `08d0f91`, `435b9c3`), agents/orchestrator implemented to green. Full isolated suite: 3694 tests, 0 failures, 0 regressions. PHPStan full-codebase run environmentally blocked locally (container OOM) — php -l + phpcs clean; PHPStan rides CI. One frozen-test transcription bug (ChartReaderTest spy plumbing) found by an engineer agent, fixed + documented `bcfa44b`.
+**Run notes (2026-07-08):** frozen-test TDD loop — orchestrator authored+froze all tests (one freeze commit per ticket branch), agents/orchestrator implemented to green; history structured as per-ticket feature branches merged --no-ff. Full isolated suite: 3694 tests, 0 failures, 0 regressions. PHPStan full-codebase run environmentally blocked locally (container OOM) — php -l + phpcs clean; PHPStan rides CI. One frozen-test transcription bug (ChartReaderTest spy plumbing) found by an engineer agent, fixed + documented in `fd71c60`.
 
 ---
 
