@@ -7,7 +7,7 @@ today** (the only "AI" footprint is developer-time code generation). The
 co-pilot's first patient-bearing prompt attaches obligations that cannot be
 retrofitted: a **signed BAA with zero data retention**, **minimum-necessary**
 prompt design, and **every disclosure logged** in the audit trail under a new
-external-AI category (which must be built with the feature).
+external-AI category (built with the feature).
 De-identification is **not** an escape hatch: identity is dual and unreliable
 (`pid` plus a nullable, batch-backfilled `uuid` — D7) and identifiers hide in
 free text (D1/D6) — a scrubbed prompt is not de-identified. C5 gates every
