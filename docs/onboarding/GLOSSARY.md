@@ -13,9 +13,9 @@
 |---|---|
 | **EHR** | Electronic Health Records — the clinical side of the app. |
 | **Practice management** | The scheduling/billing/administrative side. |
-| **pid** | Patient ID — the legacy integer primary key for a patient (`patient_data.pid`). Still returned by the API alongside `uuid`. |
-| **uuid** | The modern UUID identity for a resource, added on top of legacy integer PKs. Patients (and many resources) carry **both** a `pid`/integer id and a `uuid`. |
-| **puuid** | "Patient UUID" — the UUID form of a patient identifier, used in API routes (`GET /api/patient/:puuid`). Same pattern: `fuuid` (facility), `euuid` (encounter), etc. |
+| **pid** | Patient ID — the legacy integer primary key for a patient (`patient_data.pid`) and the **trusted, canonical identifier** in this codebase. Still returned by the API alongside `uuid`. |
+| **uuid** | A **supplemental** UUID identifier for a resource, layered on top of the legacy integer PKs — **not** the source of truth: it is nullable and backfilled (`AUDIT.md` D7), so identity is keyed on `pid`. Patients (and many resources) carry **both** a `pid`/integer id and a `uuid`. |
+| **puuid** | "Patient UUID" — the UUID form of a patient identifier, used in API routes (`GET /api/patient/:puuid`). Same pattern: `fuuid` (facility), `euuid` (encounter), etc. — all supplemental UUID forms over the integer keys, subject to the same D7 caveat. |
 | **Encounter** | A single clinical visit/interaction for a patient. Central clinical unit; forms attach to encounters. |
 | **Facility** | A physical clinic/location. Login and many operations can be facility-scoped (`login_into_facility`, `pc_facility` cookie). |
 | **Form** | A clinical data-entry module attached to an encounter (`interface/forms/**`, `src/Forms`). OpenEMR forms are pluggable. |
