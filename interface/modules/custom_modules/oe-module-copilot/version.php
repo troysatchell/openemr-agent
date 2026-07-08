@@ -9,6 +9,7 @@
  * @copyright Copyright (c) 2026 Troy Satchell <troysatchell@gmail.com>
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
  */
+declare(strict_types=1);
 
 $v_major = '1';
 $v_minor = '0';
