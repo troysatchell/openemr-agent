@@ -1,40 +1,5 @@
 # AUDIT.md — OpenEMR as found (Clinical Co-Pilot fork)
 
-> Hard-gate deliverable: **all audit findings**, in the five required parts —
-> **security, performance, architecture, data quality, and compliance &
-> regulatory** (HIPAA as its own pass beyond the security section) — preceded
-> by a one-page summary of the most impactful findings and the AI-impact
-> prioritization. Baseline commit `859d6d3` (2026-07-06). Every finding is
-> grounded in a concrete `file:line` observation; the finding IDs
-> (`S#`/`P#`/`D#`/`C#`) are the ones used across this repo's docs
-> ([`ARCHITECTURE.md`](ARCHITECTURE.md), [`USERS.md`](USERS.md), `CLAUDE.md`,
-> `docs/onboarding/`).
->
-> **Provenance of this document.** Assembled from the working audit docs with
-> findings unchanged: the former `docs/onboarding/AGENT-IMPL-AUDIT.md` (Part 0,
-> the AI-impact prioritization) and `docs/onboarding/AUDIT_FULL.md` (Parts 1–5,
-> the full five-audit findings). Those originals were removed 2026-07-07 after
-> consolidation — **this root file is now the single canonical audit** (the
-> originals survive in git history), and no findings were added, removed, or
-> softened in assembly. Companion as-found docs live in `docs/onboarding/`
-> (`CURRENT_ARCHITECTURE.md`, `GLOSSARY.md`, `OPEN_QUESTIONS.md`,
-> `START_HERE.md`) — prose references like "`OPEN_QUESTIONS.md` #6" below
-> point there.
->
-> **Scope note (unchanged from the source audit).** This is a
-> design/architecture audit derived by reading entry points, wiring, and the
-> security-critical `src/Common` tier — **not a penetration test** and not an
-> exhaustive line-by-line SAST sweep of the ~20-year legacy surface
-> (`library/`, `interface/`). The data-quality pass audits the **schema and
-> write path** (the structural conditions that permit bad data), not a
-> populated production database — no live-data rates are claimed anywhere in
-> this document; each data finding ends with the profiling query that would
-> quantify it. Findings are things a reader can verify in the code today.
-> Severity is *our* rating of deployment risk, to be confirmed with whoever
-> owns the deployment.
-
----
-
 ## One-page summary — the findings that matter most
 
 **The one gating finding (C5).** There is **no PHI→LLM flow in this codebase
@@ -91,6 +56,34 @@ seams. The consequence for the agent, carried into `ARCHITECTURE.md`: read only
 via FHIR/REST as the physician, data-trust before the model, one synthesis
 pass, per-route default-deny, and S1–S3 closed with BAA + ZDR + disclosure
 logging in place before the first PHI-bearing request leaves the building.
+
+---
+
+## Scope, provenance, and how to read this document
+
+> Baseline commit `859d6d3` (2026-07-06). Part 0 (the AI-impact
+> prioritization) is followed by the full findings in the five required parts —
+> **security, performance, architecture, data quality, and compliance &
+> regulatory** (HIPAA as its own pass beyond the security section). Every
+> finding is grounded in a concrete `file:line` observation; the finding IDs
+> (`S#`/`P#`/`D#`/`C#`) are the ones used across this repo's docs
+> ([`ARCHITECTURE.md`](ARCHITECTURE.md), [`USERS.md`](USERS.md), `CLAUDE.md`).
+> Consolidated 2026-07-07 from the former onboarding audit docs with findings
+> unchanged — this file is the single canonical audit. Companion as-found docs
+> (`CURRENT_ARCHITECTURE.md`, `GLOSSARY.md`, `OPEN_QUESTIONS.md`,
+> `START_HERE.md`) live in `docs/onboarding/` — prose references like
+> "`OPEN_QUESTIONS.md` #6" below point there.
+>
+> **Scope note.** This is a design/architecture audit derived by reading entry
+> points, wiring, and the security-critical `src/Common` tier — **not a
+> penetration test** and not an exhaustive line-by-line SAST sweep of the
+> ~20-year legacy surface (`library/`, `interface/`). The data-quality pass
+> audits the **schema and write path** (the structural conditions that permit
+> bad data), not a populated production database — no live-data rates are
+> claimed anywhere in this document; each data finding ends with the profiling
+> query that would quantify it. Findings are things a reader can verify in the
+> code today. Severity is *our* rating of deployment risk, to be confirmed
+> with whoever owns the deployment.
 
 ---
 

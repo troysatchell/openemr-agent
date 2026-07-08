@@ -1,15 +1,5 @@
 # ARCHITECTURE.md — Clinical Co-Pilot Agent
 
-> Hard-gate deliverable: how we intend to build the agent. Forward-looking;
-> nothing implemented yet. Sources: the audit ([`AUDIT.md`](AUDIT.md); its
-> AI-impact prioritization is Part 0 of that file), the user profile
-> ([`USERS.md`](USERS.md) — capabilities trace to its use cases **UC1–UC5**,
-> §5), the as-found system (`docs/onboarding/CURRENT_ARCHITECTURE.md`).
-> Specialist terms are defined in `docs/onboarding/GLOSSARY.md`. Finding IDs
-> (`S#`/`D#`/`C#`) reference the audit. Baseline `859d6d3`.
-
----
-
 ## Executive Summary
 
 We are building a **clinical co-pilot**: a **multi-turn, tool-using conversational agent** — not a dashboard — embedded in this OpenEMR instance that, in the physician's ~90-second window between patients, **opens with a glanceable snapshot** (who the patient is, what changed since the last visit, what must not be missed, and the thread from last time) **and then answers follow-ups grounded in the chart** (every capability traces to a use case in `USERS.md` §5, UC1–UC5). It is deliberately **not** an autonomous
@@ -372,7 +362,9 @@ snapshot demo.
 
 ---
 
-*The audit ([`AUDIT.md`](AUDIT.md); its AI-impact prioritization is Part 0)
-is the evidence base for every finding
-cited here; the use cases (UC1–UC5) are defined in [`USERS.md`](USERS.md) §5;
-specialist terms are in `docs/onboarding/GLOSSARY.md`.*
+*This document is forward-looking — nothing is implemented yet. The audit
+([`AUDIT.md`](AUDIT.md); its AI-impact prioritization is Part 0) is the
+evidence base for every finding cited here (IDs `S#`/`P#`/`D#`/`C#`); the use
+cases (UC1–UC5) are defined in [`USERS.md`](USERS.md) §5; the as-found system
+is described in `docs/onboarding/CURRENT_ARCHITECTURE.md`; specialist terms
+are in `docs/onboarding/GLOSSARY.md`. Baseline commit `859d6d3`.*
