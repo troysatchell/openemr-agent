@@ -1,0 +1,8 @@
+# Keep the `railway up` upload small. Mirrors .dockerignore — these are
+# regenerated in-image (vendor, node_modules) or never needed at runtime.
+.git
+.gitlab
+**/node_modules
+/vendor
+tmp/
+*.log

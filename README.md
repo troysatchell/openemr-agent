@@ -16,6 +16,37 @@
 
 [![Backers on Open Collective](https://opencollective.com/openemr/backers/badge.svg)](#backers) [![Sponsors on Open Collective](https://opencollective.com/openemr/sponsors/badge.svg)](#sponsors)
 
+# Clinical Co-Pilot — OpenEMR fork (Gauntlet AgentForge)
+
+This repository is a fork of OpenEMR being extended with a **Clinical Co-Pilot**:
+an AI agent embedded in OpenEMR that orients a physician to the next patient in
+the ~90 seconds between rooms. The agent is planned, not yet implemented — the
+plan and its evidence base are the documents below.
+
+- **Deployed app (live):** <https://openemr-production-4eba.up.railway.app>
+  — hosted on Railway (two services: OpenEMR + MariaDB); deployment scaffolding
+  in [`deploy/railway/`](deploy/railway/) and [`railway.json`](railway.json).
+  Demo data only; no real PHI.
+- **Audit — all findings (hard gate):** [`AUDIT.md`](AUDIT.md) — security,
+  performance, architecture, data quality, compliance & regulatory, with a
+  one-page summary and the AI-impact prioritization.
+- **Target user & use cases (hard gate):** [`USERS.md`](USERS.md) — Dr. Ellis
+  Tran (an explicitly *unvalidated* working hypothesis), his workflow, and use
+  cases UC1–UC5 with the "why an agent" answer for each.
+- **Agent architecture plan (hard gate):** [`ARCHITECTURE.md`](ARCHITECTURE.md)
+  — where the agent lives, how it reads data, authorization boundaries,
+  verification strategy, risks, and roadmap.
+- **Setup guide:** [CONTRIBUTING.md](CONTRIBUTING.md) (full instructions) —
+  quick start: `cd docker/development-easy && docker compose up --detach
+  --wait`, then open <http://localhost:8300/> (login `admin` / `pass`). See
+  also [DOCKER_README.md](DOCKER_README.md) and `CLAUDE.md`.
+- **Onboarding / evidence docs:** [`docs/onboarding/`](docs/onboarding/) —
+  start at [`START_HERE.md`](docs/onboarding/START_HERE.md).
+
+The upstream OpenEMR README follows.
+
+---
+
 # OpenEMR
 
 [OpenEMR](https://open-emr.org) is a Free and Open Source electronic health records and medical practice management application. It features fully integrated electronic health records, practice management, scheduling, electronic billing, internationalization, free support, a vibrant community, and a whole lot more. It runs on Windows, Linux, Mac OS X, and many other platforms.

@@ -1,0 +1,11 @@
+# Build-context excludes for the root-context Railway build
+# (deploy/railway/Dockerfile). Only excludes things the build regenerates
+# or never needs — do NOT exclude docker/release/*, it holds runtime config
+# the Dockerfile COPYs.
+.git
+.gitlab
+**/node_modules
+/vendor
+# host-only local dev artifacts
+tmp/
+*.log
