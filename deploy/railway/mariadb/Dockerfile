@@ -8,5 +8,7 @@
 #
 # Deployed as its own Railway service via:
 #   railway up deploy/railway/mariadb --service mariadb --detach
-FROM mariadb:11.8
+# Digest-pinned so rebuilds are reproducible (mariadb:11.8 as of 2026-07-08);
+# bump deliberately by re-resolving: docker buildx imagetools inspect mariadb:11.8
+FROM mariadb:11.8@sha256:efb4959ef2c835cd735dbc388eb9ad6aab0c78dd64febcd51bc17481111890c4
 CMD ["mariadbd", "--bind-address=::", "--character-set-server=utf8mb4"]

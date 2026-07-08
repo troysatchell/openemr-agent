@@ -735,7 +735,7 @@ connection sharing.
 Both request spines converge on the same service + data tiers — they differ only
 in bootstrap and dispatch:
 
-```
+```text
 LEGACY WEB SPINE                          MODERN API SPINE
 root *.php / interface/**                  apis/dispatch.php
   └─ require interface/globals.php           └─ HttpRestRequest::createFromGlobals()

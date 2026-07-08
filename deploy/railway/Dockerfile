@@ -91,7 +91,13 @@ RUN apk add --no-cache \
 RUN sed -i 's/^Listen 80$/Listen 0.0.0.0:80/' /etc/apache2/httpd.conf
 RUN usermod -u 1000 apache
 RUN ln -sf /usr/bin/php${PHP_VERSION_ABBR} /usr/bin/php
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/bin --filename=composer
+# Verify the Composer installer against the published SHA-384 before running it
+RUN EXPECTED_CHECKSUM="$(curl -fsSL https://composer.github.io/installer.sig)" \
+    && curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php \
+    && ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', '/tmp/composer-setup.php');")" \
+    && [ "$EXPECTED_CHECKSUM" = "$ACTUAL_CHECKSUM" ] \
+    && php /tmp/composer-setup.php --install-dir=/usr/bin --filename=composer \
+    && rm /tmp/composer-setup.php
 
 # ============================================================================
 # Stage 1: OpenEMR source — the local fork tree (NOT an upstream git clone)
