@@ -34,9 +34,11 @@ final readonly class Scorer
             }
         }
 
+        // Precision is over distinct flagged findings: a repeated id is the
+        // same flag, not two, so dedupe before counting true/false positives.
         $truePositiveFlags = 0;
         $falsePositiveFlags = 0;
-        foreach ($result->flaggedIds as $flaggedId) {
+        foreach (array_unique($result->flaggedIds) as $flaggedId) {
             if (in_array($flaggedId, $mustNotMiss, true)) {
                 $truePositiveFlags++;
             } else {

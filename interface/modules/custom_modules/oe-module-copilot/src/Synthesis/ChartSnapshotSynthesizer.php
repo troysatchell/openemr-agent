@@ -89,6 +89,6 @@ final class ChartSnapshotSynthesizer
 
     private function dedupeKey(string $label, CurrencyStatus $status): string
     {
-        return mb_strtolower(trim($label)) . "\0" . $status->name;
+        return mb_strtolower(trim($label), 'UTF-8') . "\0" . $status->name;
     }
 }
