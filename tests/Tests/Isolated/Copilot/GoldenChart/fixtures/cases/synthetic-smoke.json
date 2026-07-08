@@ -1,0 +1,9 @@
+{
+    "id": "synthetic-smoke",
+    "adjudicated": false,
+    "_comment": "SYNTHETIC harness scaffolding — structurally valid, clinically meaningless. Never adjudicated ground truth; real golden-chart labels are Phase 0 human output (founder-adjudicated in v1). Do not use for clinical metrics.",
+    "labels": {
+        "must_not_miss": ["synthetic-panic-k", "synthetic-ddi"],
+        "key_facts": ["synthetic-fact-a1c"]
+    }
+}

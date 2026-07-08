@@ -1,0 +1,37 @@
+##
+# Clinical-accuracy gate (T11; ARCHITECTURE.md §6). Runs the whole copilot
+# isolated contract surface — the golden-chart scorer, loader, and the gate
+# itself. A red critical-subset gate is a stop-and-escalate, never a fixture
+# regeneration. Discovered automatically by all-checks-passed.yml.
+
+name: clinical-accuracy-gate
+
+on:
+  push:
+    branches:
+    - master
+    - rel-*
+  pull_request:
+    branches:
+    - master
+    - rel-*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  clinical-accuracy-gate:
+    name: clinical-accuracy-gate
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Setup PHP and Composer
+      uses: ./.github/actions/setup-php-composer
+      with:
+        php-version: '8.4'
+
+    - name: Run copilot clinical-accuracy contract tests
+      run: vendor/bin/phpunit -c phpunit-isolated.xml tests/Tests/Isolated/Copilot
