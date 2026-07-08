@@ -303,7 +303,7 @@ Foundations first; each phase gates the next.
   policy; disclosure logging (`C1/C5`); close `S1/S2/S3`; module skeleton + FHIR
   read path.
 - **Phase 2 — Data-trust substrate.** Identity/dedup, filtering, normalization,
-  one-pass synthesis; the deterministic critical-subset rules (§6.3 items); the
+  one-pass synthesis; the deterministic critical-subset rules (§6); the
   initial golden-chart set, labels seeded by the in-house Phase 0 adjudication.
 - **Phase 3 — Orientation MVP** *(read-only, established patients first; gated on
   the accuracy gate passing).* **Session-bound** pre-chart — kicked from his live
