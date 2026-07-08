@@ -143,7 +143,7 @@ COPY --from=openemr-assets /openemr/ccdaservice /tmp/openemr/ccdaservice
 RUN cd /tmp \
     && find openemr -type d -exec chmod 500 {} + \
     && find openemr -type f -exec chmod 400 {} + \
-    && chmod 666 openemr/sites/default/sqlconf.php \
+    && chmod 600 openemr/sites/default/sqlconf.php \
     && chmod 700 openemr/sites/default \
     && find openemr/sites/default/documents -type d -exec chmod 700 {} + \
     && find openemr/sites/default/documents -type f -exec chmod 600 {} + \
@@ -162,6 +162,7 @@ ENV APACHE_LOG_DIR=/var/log/apache2
 
 COPY docker/release/php.ini /etc/php${PHP_VERSION_ABBR}/php.ini
 COPY docker/release/openemr.conf /etc/apache2/conf.d/
+COPY deploy/railway/forwarded-proto.conf /etc/apache2/conf.d/
 
 COPY docker/release/openemr.sh \
      docker/release/ssl.sh \

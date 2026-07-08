@@ -39,16 +39,20 @@ final class EventAuditDisclosureLogger implements DisclosureLogger
     }
 
     /**
-     * Production sink wrapping EventAuditLogger::getInstance()->newEvent().
+     * Production sink wrapping EventAuditLogger::newEvent(). The logger is the
+     * composition root's dependency — injectable so the wiring is testable,
+     * defaulting to the core singleton so production stays a one-liner.
      *
      * NOT covered by the isolated suite (it reaches the database) — verify
      * against the running stack.
      */
-    public static function forEventAuditLogger(): self
+    public static function forEventAuditLogger(?EventAuditLogger $logger = null): self
     {
+        $logger ??= EventAuditLogger::getInstance();
+
         return new self(
-            static function (string $category, string $user, string $comments, int $patientPid): void {
-                EventAuditLogger::getInstance()->newEvent($category, $user, '', 1, $comments, $patientPid);
+            static function (string $category, string $user, string $comments, int $patientPid) use ($logger): void {
+                $logger->newEvent($category, $user, '', 1, $comments, $patientPid);
             },
         );
     }

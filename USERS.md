@@ -6,7 +6,7 @@
 > [`ARCHITECTURE.md`](ARCHITECTURE.md) traces back to (use-case IDs **UC1–UC5**,
 > §5). System and data constraints cited here are grounded in
 > [`AUDIT.md`](AUDIT.md).
-
+>
 > ## ⚠ Epistemic status — read first
 >
 > **No physician has been interviewed for this.** "Dr. Ellis Tran" is a
