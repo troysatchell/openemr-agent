@@ -3,8 +3,8 @@
 > **What this is.** The scope contract for v1: the problem, the user, what we're
 > building, what we're deliberately *not*, and how we'll know it worked. It sits
 > **before** [`ARCHITECTURE.md`](../../ARCHITECTURE.md) (what / who / why → then
-> how) and points to [`USERS.md`](USERS.md) for the full profile rather than
-> restating it.
+> how) and points to [`USERS.md`](../../USERS.md) (repo root) for the full
+> profile rather than restating it.
 >
 > **Deliberately thin.** The expensive thinking lives in the companion docs; this
 > page exists to make scope and success *explicit*, not to repeat them.
@@ -20,8 +20,8 @@ re-read under time pressure — and the misses are invisible.
 
 ## User (and buyer)
 
-**User:** Dr. Ellis Tran, general internist — see `USERS.md`. A **hypothesis, not
-yet validated.**
+**User:** Dr. Ellis Tran, general internist — see [`USERS.md`](../../USERS.md).
+A **hypothesis, not yet validated.**
 **Buyer:** likely *not* Ellis — a medical director / administrator who wants
 different things (throughput, quality scores, liability, compliance), some of
 which pull *against* what wins the user. **Which metrics we're held to is
@@ -29,13 +29,14 @@ unresolved — the top open question.**
 
 ## In scope — v1
 
-Read-only **orientation** for the physician's own established patients:
+Read-only **orientation** for the physician's own established patients
+(use-case IDs per `USERS.md` §5):
 
-- Overnight **pre-chart** of the day's panel.
+- Overnight **pre-chart** of the day's panel *(UC3)*.
 - A **glanceable between-patient snapshot**: who & why, what's changed since last
-  visit, must-not-miss, the thread from last time.
-- **On-demand retrieval** during the visit; quiet otherwise.
-- Every surfaced item **traceable to its source** in the chart.
+  visit, must-not-miss, the thread from last time *(UC1, UC4)*.
+- **On-demand retrieval** during the visit; quiet otherwise *(UC2)*.
+- Every surfaced item **traceable to its source** in the chart *(UC4)*.
 
 ## Explicitly NOT v1 (non-goals)
 
@@ -65,7 +66,7 @@ Binary / testable:
 
 ## Success metrics — *"it worked in the world"*
 
-Behavioral, not self-report (`USERS.md` §10):
+Behavioral, not self-report (`USERS.md` §9):
 
 - Walks into the room **without the laptop**.
 - **Pajama time shrinks** (fewer notes closed after hours).
@@ -78,22 +79,26 @@ tension; see open questions.)*
 
 ## Sequencing
 
-**Validation gates the build.** Phase 0 is one real internist confirming the
-90-second moment and the four needs *before* we build UI (`ARCHITECTURE.md` §7).
-We do not optimize for a physician who may not exist.
+**Validation gates the build — run in-house.** Phase 0 (decided 2026-07-07: no
+external internist; the design-partner function is created in-house) is a
+founder-run structured pass over the 90-second moment and the four needs *before*
+we build UI (`ARCHITECTURE.md` §7). It keeps us from building unexamined for a
+physician who may not exist — without pretending it equals real-clinician review.
 
 ## Open questions (blocking)
 
-1. Do we have a real **design-partner internist**? *(Gates Phase 0 → everything.)*
+1. ~~Do we have a real **design-partner internist**?~~ **Decided 2026-07-07: no —
+   Phase 0 is run in-house; real-clinician review is a post-MVP upgrade, not a
+   gate.**
 2. **User vs. buyer** — who signs off, on what value, and where do their metrics
    conflict? *(Owns the definition of success.)*
 3. Who owns **clinical governance** of the critical-subset definition and the
    recall / precision floors?
 4. What **latency** does the between-patient moment actually tolerate? *(p95, set
-   with the partner.)*
+   during in-house Phase 0; revisit with a real clinician.)*
 
 ---
 
-*Companion to [`USERS.md`](USERS.md) and [`ARCHITECTURE.md`](../../ARCHITECTURE.md).
+*Companion to [`USERS.md`](../../USERS.md) and [`ARCHITECTURE.md`](../../ARCHITECTURE.md).
 Acceptance criteria are verified by the accuracy gate (`ARCHITECTURE.md` §6); the
 user profile behind the success metrics is `USERS.md`.*

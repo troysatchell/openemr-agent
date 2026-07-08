@@ -1,4 +1,11 @@
-# User Profile — Dr. Ellis Tran *(working hypothesis — unvalidated)*
+# USERS.md — Dr. Ellis Tran *(working hypothesis — unvalidated)*
+
+> Hard-gate deliverable: the target user, his workflow, and the specific use
+> cases the agent addresses — each with an explicit answer to *why an agent is
+> the right solution here*. This document is the source of truth
+> [`ARCHITECTURE.md`](ARCHITECTURE.md) traces back to (use-case IDs **UC1–UC5**,
+> §5). System and data constraints cited here are grounded in
+> [`AUDIT.md`](AUDIT.md).
 
 > ## ⚠ Epistemic status — read first
 >
@@ -9,12 +16,14 @@
 > guesses: *"he wants eye contact,"* *"one wrong fact ends his trust,"* *"he
 > trusts silence."* Excellent guesses. Still guesses.
 >
-> **The highest-leverage next move is not refining this archetype — it is putting
-> it in front of one real design-partner internist.** Whether §§3–8 are knowledge
-> or assumption depends entirely on that one fork. Until it happens, we risk
+> **Decided 2026-07-07: there is no external design-partner internist, and we are
+> not recruiting one this sprint — the design-partner function is created
+> in-house** (a founder-run validation pass using the **"→ Test by"** prompts
+> below as the protocol). That keeps the build moving, but it does not upgrade
+> any hypothesis to knowledge: until a real internist reviews this, we still risk
 > building something perfectly optimized for a person who does not exist. Treat
-> every section below as an **assumption to test**, and use the **"→ Test by"**
-> prompts as a starting interview guide.
+> every section below as an **assumption to test**; the prompts double as the
+> interview guide for whenever a real clinician becomes available.
 
 ---
 
@@ -42,10 +51,12 @@ Everything after §2 is hypothesis.
 
 ## 2. The validation imperative
 
-Before more archetype refinement, run **one conversation with a real
-outpatient internist** (ideally a design partner we can return to). The goal is
-not to confirm Ellis — it's to find which hypotheses *break*. Highest-value to
-test first, because the most is built on top of them:
+The validation pass is run **in-house** (decided 2026-07-07 — no external design
+partner; the founder runs the "→ Test by" protocol and adjudicates the answers),
+with a standing intent to re-run it with **one real outpatient internist** when
+one is available. Either way the goal is not to confirm Ellis — it's to find
+which hypotheses *break*. Highest-value to test first, because the most is built
+on top of them:
 
 - Is the **90-second between-patient moment** actually the felt pain, or is the
   real bottleneck elsewhere (documentation, inbox, prior auth)?
@@ -53,10 +64,12 @@ test first, because the most is built on top of them:
   any missing?
 - The **"states"** question (§3): how much of his week is *not* his own
   established patients?
-- The **churn triggers** (§8): would one wrong fact really end trust, or is he
+- Would he actually **choose the conversational shape** (§5) over a better chart
+  view — or does "agent" read as one more thing to babysit?
+- The **churn triggers** (§9): would one wrong fact really end trust, or is he
   more forgiving / less forgiving than we assume?
 
-If any of these break, §§3–8 change materially. Design should not get ahead of
+If any of these break, §§3–9 change materially. Design should not get ahead of
 this conversation.
 
 ---
@@ -71,7 +84,7 @@ may be where the tool is *most* valuable.
 
 Any encounter sits on **two independent axes**:
 
-- **Complexity** — stable vs. complex/changed (the axis in §6).
+- **Complexity** — stable vs. complex/changed (the axis in §7).
 - **Familiarity** — is Ellis the longitudinal through-line for this patient, or a
   stranger to the chart?
 
@@ -85,12 +98,12 @@ The familiarity axis has three states:
 
 Two consequences the continuity framing missed:
 
-1. **S2 is a distinct, high-value state — not a flavor of the "complex 5" (§6).**
+1. **S2 is a distinct, high-value state — not a flavor of the "complex 5" (§7).**
    Orienting to a stranger under time pressure is arguably *harder and higher
    value* than the continuity case the persona optimized for. The
    highest-value **and** highest-risk quadrant is **complex × unfamiliar**: a sick
    patient he has never met.
-2. **It sharpens the deskilling risk (§7).** On his own patients he has memory to
+2. **It sharpens the deskilling risk (§8).** On his own patients he has memory to
    fall back on when the tool is down or wrong. On a colleague's chart he has
    none — so **degraded-mode failure bites hardest exactly in S2**, the case the
    original framing looked away from.
@@ -127,7 +140,101 @@ and what he wishes he'd known before opening the door.
 
 ---
 
-## 5. Who he is — drivers and adoption psychology *(hypothesis)*
+## 5. Use cases — and why an agent, not a dashboard *(hypothesis)*
+
+The specific moments the co-pilot enters Ellis's day, derived from §§3–4. Each
+carries the burden the case study demands: **why is a conversational agent the
+right shape — not a dashboard, not a sorted list, not a better chart view?**
+Every agent capability in [`ARCHITECTURE.md`](ARCHITECTURE.md) must trace to a
+UC id here; a capability that can't is out of scope. Like everything after §2,
+these are hypotheses until the Phase 0 conversation — including the shape
+question itself (§2).
+
+### UC1 — The 90-second re-orientation *(v1 core; state S1)*
+
+- **Moment:** the ~90 seconds between rooms. Thirty seconds before opening the
+  door he needs the four §4 items for *this* patient, glanceable, nothing else.
+- **What he does with the output:** walks in already oriented — ideally without
+  re-opening the chart in the room (§4's eye-contact hypothesis).
+- **Why an agent:** the four needs are a **salience problem, not a display
+  problem**. What matters today differs per patient — a creatinine trend here, an
+  ED visit there, a dangerous med–lab combination that only exists *across*
+  sources (`AUDIT.md` D9) — so a dashboard's fixed fields either miss it or show
+  everything (which is the dense chart he already has). And the snapshot is only
+  the *opening turn*: the moment reliably produces follow-up questions no
+  precomputed view can anticipate — which is UC2. A better chart view shows him
+  where to look; the agent answers what he actually asked.
+
+### UC2 — Grounded follow-up questions *(v1 core; the multi-turn case)*
+
+- **Moment:** immediately after the UC1 snapshot, or mid-visit: "when did we
+  start the statin?", "show me the potassium trend," "was she on lisinopril when
+  that creatinine came back?"
+- **What he does with the output:** decides — order, adjust, reassure, refer.
+  The agent orients; he owns the call.
+- **Why an agent (and specifically why multi-turn):** the space of follow-ups is
+  open-ended, and the second question builds on the first answer — "show me the
+  trend" → "since the dose change?" is one thought, not two searches. A search
+  bar returns documents; he needs **answers with provenance** (every claim
+  traceable to its chart source). This is the use case that justifies multi-turn
+  conversation per the case-study bar — without it, we would not build
+  multi-turn. Constraint carried into the design: prior turns inform *intent*,
+  never *facts* — every turn re-grounds against the live chart
+  (`ARCHITECTURE.md` §3.5).
+
+### UC3 — Pre-charting the day *(v1; session-bound)*
+
+- **Moment:** the evening before (the pajama-time window the product aims to
+  shrink) or at morning login: prepare the UC1 snapshot for each of tomorrow's
+  booked encounters, so the between-patient moment starts warm.
+- **What he does with the output:** a 10-minute skim of the day, flagging the
+  ~5 complex/changed patients (§7) that need real prep.
+- **Why an agent:** each item *is* UC1's synthesis, produced by chaining tools —
+  schedule read → per-patient FHIR reads → data-trust filtering (dedupe D8,
+  activity filters D10) → one-pass synthesis — and its product is the primed
+  conversation of UC1/UC2, not a static artifact: the pre-chart is turn zero.
+  **Honest caveat:** of the five use cases this is the one closest to defensible
+  as a plain report; it earns its place because it is the *same capability run
+  ahead of time*, not a separate feature to maintain.
+
+### UC4 — The must-not-miss guarantee *(v1; always-on within UC1/UC3)*
+
+- **Moment:** always-on, inside every snapshot and pre-chart: a panic lab, a
+  drug–drug contraindication, a drug–allergy conflict, an open follow-up that
+  was never closed.
+- **What he does with the output:** acts on it first — this is the "what he must
+  not miss" need (§4.3), the one with patient-harm stakes.
+- **Why an agent (with a deterministic core):** the detection is deliberately
+  **not** model judgment — these items are found by unit-tested rules in the
+  data-trust/synthesis layer (`ARCHITECTURE.md` §6), the case study's
+  domain-constraint enforcement. What the *agent* adds is delivery: folding the
+  flags into the patient's narrative at the moment of use, visually distinct,
+  with provenance, and able to answer *"why is this flagged?"* A raw alert
+  list is precisely the alert-fatigue channel he has learned to tune out (§9's
+  churn trigger); a conversational surface that can justify each flag is the
+  hypothesis for surviving that reflex.
+
+### UC5 — Cold orientation to a stranger's chart *(fast-follow, NOT v1; states S2/S3)*
+
+- **Moment:** covering a partner's patient or seeing a net-new one — no "last
+  time," no memory fallback (§3).
+- **What he does with the output:** builds a working model of an unfamiliar
+  patient in the same 90 seconds.
+- **Why an agent:** this is the purest conversational case — he must
+  *interrogate* an unfamiliar chart under time pressure, and his questions
+  cannot be predicted well enough to pre-render a view for them. It is also the
+  highest-risk state: no memory fallback means degraded-mode failure bites
+  hardest here (§8), which is exactly why it is deferred to Phase 4
+  (`ARCHITECTURE.md` §7) rather than attempted first.
+
+→ **Test by:** for each use case, ask him to narrate the last time that moment
+went badly — and whether he would have *asked a question* or *wanted a better
+screen*. If the answer is consistently "a better screen," the agent shape is
+wrong and we should know before building it.
+
+---
+
+## 6. Who he is — drivers and adoption psychology *(hypothesis)*
 
 Believed, unverified:
 
@@ -147,7 +254,7 @@ would have to be true in week one for him to keep using something new.
 
 ---
 
-## 6. Panel and complexity variability *(hypothesis)*
+## 7. Panel and complexity variability *(hypothesis)*
 
 We suspect "22/day" hides large variance: on a given day maybe ~5 are
 complex/changed and the rest largely stable, so the 90-second need is
@@ -160,7 +267,7 @@ actually needed real prep, and what made those different.
 
 ---
 
-## 7. Trust, dependence, and degraded mode *(hypothesis)*
+## 8. Trust, dependence, and degraded mode *(hypothesis)*
 
 We hypothesize his stance moves along a curve, and the middle is the dangerous
 part: **skeptical → provisional → over-reliant.** Once he trusts the summary he
@@ -179,7 +286,7 @@ he'd trust it more or less on a patient he's never met.
 
 ---
 
-## 8. Adoption and churn — what to instrument *(hypothesis)*
+## 9. Adoption and churn — what to instrument *(hypothesis)*
 
 We believe self-reported satisfaction and "time saved" are poor signals (he
 won't perceive 30 seconds). Behavioral signals we'd watch instead — **to be
@@ -202,7 +309,7 @@ trusting it — and what would make him recommend it to a partner.
 
 ---
 
-## 9. Secondary stakeholders *(brief)*
+## 10. Secondary stakeholders *(brief)*
 
 - **Rooming MA / nurse** — preps the patient first; possible adjacent user and
   source of the reason-for-visit.
@@ -213,11 +320,14 @@ trusting it — and what would make him recommend it to a partner.
 
 ---
 
-## 10. Open questions
+## 11. Open questions
 
-1. **Is Ellis the buyer, or do we need a separate buyer persona?** (§9)
-2. **Do we have — or can we get — a real design-partner internist to validate
-   against?** This is the fork the whole document hangs on (§2).
+1. **Is Ellis the buyer, or do we need a separate buyer persona?** (§10)
+2. ~~Do we have — or can we get — a real design-partner internist?~~ **Decided
+   2026-07-07: no — validation is run in-house (§2), the design-partner function
+   self-created.** The open question is now *when* a real internist reviews the
+   persona; every hypothesis here carries the founder-adjudication caveat until
+   then.
 3. **Practice context:** solo/small-group vs. employed-in-a-system — changes his
    autonomy, liability, and adoption say.
 4. **State mix (§3):** what share of his encounters are S1 vs. S2 vs. S3? The
@@ -225,7 +335,9 @@ trusting it — and what would make him recommend it to a partner.
 
 ---
 
-*Companion to the onboarding docs and [`AUDIT.md`](AUDIT.md). This profile
-describes a **hypothesized** user; nothing in it should be treated as validated
-until a real internist has reviewed it. Product scope, agent behavior, and
-safety/compliance constraints are deliberately out of scope here.*
+*Companion to the onboarding docs (`docs/onboarding/`) and [`AUDIT.md`](AUDIT.md).
+This profile describes a **hypothesized** user; nothing in it should be treated
+as validated until a real internist has reviewed it. Product scope, agent
+behavior, and safety/compliance constraints live in
+[`ARCHITECTURE.md`](ARCHITECTURE.md) and `docs/onboarding/PRD.md`, which trace
+back to the use cases in §5.*

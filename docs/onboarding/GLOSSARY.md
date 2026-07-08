@@ -102,6 +102,6 @@ Our coined terms are marked *(our term)*.
 | **Synthesis (one-pass)** | *(our term)* Reconciling meds, labs, and allergies together in a single step so cross-source interactions aren't missed; contrasted with isolated per-source summaries. |
 | **Must-not-miss set** | *(our term)* The items that must appear in a snapshot for a given patient/visit (a critical result, a dangerous interaction, a real care gap, an unclosed thread). |
 | **Critical subset (deterministic)** | *(our term)* The highest-stakes must-not-miss items — panic labs, drug–drug contraindications, drug–allergy conflicts, open follow-ups — surfaced by **code rules, not model judgment**; target zero misses. |
-| **Golden-chart set** | *(our term)* Curated (chart-state, visit) → expected-output cases, clinician-adjudicated, used to gate clinical accuracy; grows from production near-misses. |
+| **Golden-chart set** | *(our term)* Curated (chart-state, visit) → expected-output cases, human-adjudicated (founder in v1; clinician review pending), used to gate clinical accuracy; grows from production near-misses. |
 | **Accuracy gate** | *(our term)* The offline check that **fails a build** if the pipeline misses a critical-subset item or drops below the recall/precision/accuracy floors. |
 | **Omission / commission** | *(our term)* The two ways content can be wrong: **omission** = a must-not-miss item never surfaced (invisible; the safety killer); **commission** = a wrong fact in what *is* shown (catchable via provenance). |

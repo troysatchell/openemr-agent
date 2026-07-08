@@ -6,6 +6,11 @@
 > full picture: [`CURRENT_ARCHITECTURE.md`](CURRENT_ARCHITECTURE.md) (how it
 > works), [`GLOSSARY.md`](GLOSSARY.md) (terms), and
 > [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) (what to ask the team).
+>
+> The Clinical Co-Pilot **submission deliverables live at the repo root**:
+> [`AUDIT.md`](../../AUDIT.md) (all findings),
+> [`USERS.md`](../../USERS.md) (user + use cases),
+> [`ARCHITECTURE.md`](../../ARCHITECTURE.md) (agent plan).
 
 ---
 

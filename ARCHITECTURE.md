@@ -1,9 +1,10 @@
 # ARCHITECTURE.md — Clinical Co-Pilot Agent
 
 > Hard-gate deliverable: how we intend to build the agent. Forward-looking;
-> nothing implemented yet. Sources: the Agent Implementation Audit
-> (`docs/onboarding/AGENT-IMPL-AUDIT.md`), the user profile (`USERS.md`,
-> `docs/onboarding/`), the as-found system (`docs/onboarding/CURRENT_ARCHITECTURE.md`).
+> nothing implemented yet. Sources: the audit ([`AUDIT.md`](AUDIT.md); its
+> AI-impact prioritization is Part 0 of that file), the user profile
+> ([`USERS.md`](USERS.md) — capabilities trace to its use cases **UC1–UC5**,
+> §5), the as-found system (`docs/onboarding/CURRENT_ARCHITECTURE.md`).
 > Specialist terms are defined in `docs/onboarding/GLOSSARY.md`. Finding IDs
 > (`S#`/`D#`/`C#`) reference the audit. Baseline `859d6d3`.
 
@@ -11,7 +12,7 @@
 
 ## Executive Summary
 
-We are building a **clinical co-pilot**: a **multi-turn, tool-using conversational agent** — not a dashboard — embedded in this OpenEMR instance that, in the physician's ~90-second window between patients, **opens with a glanceable snapshot** (who the patient is, what changed since the last visit, what must not be missed, and the thread from last time) **and then answers follow-ups grounded in the chart.**** It is deliberately **not** an autonomous
+We are building a **clinical co-pilot**: a **multi-turn, tool-using conversational agent** — not a dashboard — embedded in this OpenEMR instance that, in the physician's ~90-second window between patients, **opens with a glanceable snapshot** (who the patient is, what changed since the last visit, what must not be missed, and the thread from last time) **and then answers follow-ups grounded in the chart** (every capability traces to a use case in `USERS.md` §5, UC1–UC5). It is deliberately **not** an autonomous
 decision-maker — the agent orients, the physician decides, every output is
 human-reviewed. This single framing drives both **adoption** (our user, Dr. Ellis
 Tran — a still-*unvalidated* persona — will not trust a black box) and **regulatory
@@ -56,39 +57,83 @@ adjudicated golden-chart set, with a **zero-miss bar on a deterministic critical
 subset enforced in code**, not left to model judgment. Compliance gates the LLM
 boundary; breach-precursor gaps (**S1/S2/S3**) close before exposure.
 
-**Biggest open risk:** the persona is unvalidated. **Phase 0 is a design-partner
-conversation that gates the build** — we will not optimize for a physician who may
-not exist as described.
+**Biggest open risk:** the persona is unvalidated, and (decided 2026-07-07) there
+is no external design-partner internist — **Phase 0 is run in-house**: we create
+the design-partner function ourselves and build against the hypothesis with that
+limitation named. No practicing clinician has reviewed this; real-clinician review
+is the highest-leverage upgrade when available.
 
 ---
 
 ## 1. Scope
 
-- - **In (v1):** read-only orientation for the physician's own established patients, delivered through a **multi-turn conversational agent** — it **opens with a glanceable snapshot**, then answers **on-demand follow-ups** grounded in the chart; plus an overnight pre-chart of the panel; everything traceable to its source. *(The conversational surface is the core; the snapshot is its opening turn.)*
+- **In (v1):** read-only orientation for the physician's own established patients, delivered through a **multi-turn conversational agent** — it **opens with a glanceable snapshot**, then answers **on-demand follow-ups** grounded in the chart; plus an overnight pre-chart of the panel; everything traceable to its source. *(The conversational surface is the core; the snapshot is its opening turn.)*
 - **Out (v1):** no write-back (notes/orders); no autonomous action; local records
   only (accepted blind spot for cross-system changes); not the covering /
   new-patient states (fast-follow — higher value, harder).
 - **Principle:** orientation aid, human-in-the-loop, never autonomous.
+
+**Capability → use-case trace** (per the case-study rule: no capability without
+a `USERS.md` §5 use case):
+
+| Agent capability | `USERS.md` use case | Status |
+|---|---|---|
+| Glanceable between-patient snapshot (the opening turn) | **UC1** | v1 |
+| Multi-turn, grounded follow-up Q&A (the reason this is an agent, not a report) | **UC2** | v1 |
+| Session-bound pre-chart of the day's schedule | **UC3** | v1 |
+| Deterministic must-not-miss critical subset + provenance on every claim | **UC4** | v1 |
+| Cold orientation for covering / new-patient states (S2/S3) | **UC5** | Phase 4, not v1 |
 
 ## 2. Where the agent lives
 
 **Decision: an in-repo OpenEMR custom module (`oe-module-copilot`), no core edits.**
 Orchestration runs in the module; only model inference is external.
 
+```mermaid
+flowchart TB
+    DOC["Physician — Dr. Tran<br/>authenticated OpenEMR session"]
+
+    subgraph TRUST["OpenEMR instance — the trust boundary (this repo)"]
+        direction TB
+        UI["Chat panel<br/>(module-injected UI, multi-turn)"]
+
+        subgraph MOD["oe-module-copilot — custom module, no core edits"]
+            direction TB
+            RT["Module API routes<br/>request_authorization_check on every route (S5)"]
+            ORCH["Orchestrator — per-turn loop<br/>(every turn re-grounds against the live chart)"]
+            DT["Data-trust layer<br/>identity/dedupe (D7/D8) · activity filters (D10)<br/>normalize empty-string / booleans / dates (D0/D1/D4)"]
+            SYN["One-pass synthesis<br/>meds × labs × allergies together (D9)"]
+            DET["Deterministic critical-subset rules — code, not model<br/>panic labs · drug–drug · drug–allergy · open follow-ups"]
+            VER["Verification layer<br/>every claim grounded in a source record;<br/>unattributable claims are not stated as fact"]
+        end
+
+        FHIR["FHIR/REST services<br/>(the only sanctioned read path — never raw tables)"]
+        ACL["AclMain — the physician's own ACL scope<br/>(delegation; never a service account)"]
+        LOG["EventAuditLogger<br/>external-AI disclosure log (C1/C5)"]
+        DB[("MySQL")]
+    end
+
+    LLM["External LLM API — OUTSIDE the trust boundary<br/>BAA + zero data retention · minimum-necessary fields only<br/>no credentials, no DB access"]
+
+    DOC -->|"question / next patient"| UI
+    UI --> RT
+    RT -->|"authz check"| ACL
+    RT --> ORCH
+    ORCH -->|"reads as the physician"| FHIR
+    FHIR --> DB
+    FHIR --> DT
+    DT --> SYN
+    SYN --> DET
+    SYN -->|"minimum-necessary,<br/>logged disclosure"| LLM
+    ORCH -.->|"every LLM crossing logged"| LOG
+    LLM -->|"draft prose — untrusted<br/>until grounded"| VER
+    DET -->|"must-not-miss items<br/>(bypass the model entirely)"| VER
+    VER -->|"grounded answer,<br/>provenance on every claim"| UI
 ```
- ┌──────────── OpenEMR instance (this repo) ──────────────┐
- │  oe-module-copilot  (custom module; no core edits)      │
- │   • hooks the UI via the module/event system            │
- │   • adds its own API routes — each authorization-checked │
- │   • orchestration: retrieval → data-trust → synthesis    │
- │        reads ▼ as the physician                          │
- │   OpenEMR FHIR/REST services → MySQL   (clean surface)   │
- └───────────────────────┬────────────────────────────────┘
-                         ▼  minimum-necessary data, logged disclosure
-                ┌─────────────────────┐
-                │  External LLM API   │  outside the trust boundary
-                └─────────────────────┘
-```
+
+*Per-request runtime flow. The build-time clinical-accuracy gate (§6) sits
+outside this loop: it runs the golden-chart set on every build change and fails
+the build on a critical-subset miss.*
 
 | | In-repo module *(chosen)* | Standalone service *(rejected v1)* |
 |---|---|---|
@@ -100,6 +145,18 @@ Orchestration runs in the module; only model inference is external.
 
 **Tradeoff:** PHP coupling and no independent inference scaling — mitigated by
 keeping orchestration extractable.
+
+**Framework & model choices.** No Python agent framework (LangChain/LangGraph/
+CrewAI) — those assume a standalone service, which Decision 1 rejects.
+Orchestration is custom, in-module PHP against the sanctioned seams
+(`openemr.bootstrap.php` → event subscriptions + routes via
+`RestApiCreateEvent`); the model is a Claude-class LLM procured under **BAA +
+zero data retention** (Anthropic direct or via a cloud BAA, e.g. Bedrock) —
+the gating requirement is *compliance-capable inference with tool use*, not a
+model family. Single agent, deliberately **not** multi-agent: the dangerous
+errors live *between* sources (D9), so per-source sub-agents would let
+interactions fall through the seam. Full option-by-option rationale:
+`docs/onboarding/PRE_SEARCH.md`.
 
 ## 3. How it accesses patient data
 
@@ -116,7 +173,7 @@ keeping orchestration extractable.
 4. **LLM boundary.** Send only minimum-necessary fields → an endpoint under BAA +
    zero data retention → log the disclosure (`EventAuditLogger`, new external-AI
    category, `C1/C5`) → attach provenance to every returned claim.
-5. **Conversation context.** Multi-turn context is an in-memory convenience for the encounter only — not persisted, no new patient-data store, so it adds no PHI-at-rest. The real constraint is correctness, not storage: **every turn re-grounds against the live chart and provenance**, so being multi-turn can't (a) answer from stale context when the record has changed mid-conversation, or (b) treat the model's own earlier output as a source. Prior turns inform phrasing and intent, never facts.persisted beyond the encounter** — no new patient-data store (consistent with Decision 1). Each turn re-grounds against provenance; prior model output is never treated as a source.
+5. **Conversation context.** Multi-turn context is an in-memory convenience for the encounter only — not persisted beyond the encounter, no new patient-data store (consistent with Decision 1), so it adds no PHI-at-rest. The real constraint is correctness, not storage: **every turn re-grounds against the live chart and provenance**, so being multi-turn can't (a) answer from stale context when the record has changed mid-conversation, or (b) treat the model's own earlier output as a source. Prior turns inform phrasing and intent, never facts.
 6. **Writes:** none in v1.
 
 ## 4. Authorization boundaries
@@ -177,15 +234,15 @@ physician" literally true even when he is **offline**.
 | R2 | Patient-data conflation | D8 | identity resolution / dedup before synthesis | §3 |
 | R3 | Garbage-in, laundered into a clean summary | D0/D9/D10 | data-trust layer | §3 |
 | R4 | Missed cross-domain interaction (the seam) | D9 | single synthesis pass, no isolated summaries | §3 |
-| R5 | Automation bias → over-reliance (behavior) | USERS §7 | preserve-distrust UX; honest uncertainty; must-not-miss visually distinct; silence when nothing changed | UI |
+| R5 | Automation bias → over-reliance (behavior) | USERS §8 | preserve-distrust UX; honest uncertainty; must-not-miss visually distinct; silence when nothing changed | UI |
 | R6 | Commission — a wrong fact in what IS shown | USERS §9 | provenance at point of use + factual-accuracy floor + human review | §3.4, §6 |
-| R13 | Omission — a must-not-miss item never surfaced (provenance/human review do NOT reach this) | USERS §7, §9 | accuracy gate + deterministic critical subset in code + production omission monitoring | §6 |
+| R13 | Omission — a must-not-miss item never surfaced (provenance/human review do NOT reach this) | USERS §8, §9 | accuracy gate + deterministic critical subset in code + production omission monitoring | §6 |
 | R7 | Over-flagging → alert-fatigue churn | USERS §9 | measured precision floor, same gate | §6 |
 | R8 | Breach precursors | S1/S2/S3 | close error leak + cookie hardening before exposure | §7 (P1) |
 | R9 | Authorization omission | S5 | module default-deny; per-route checks | §4 |
 | R10 | Liability / FDA device line | persona/C5 | reviewable-basis: provenance + human decides, never autonomous | §3.4 |
-| R11 | Degraded-mode dependence (worst when covering) | USERS §3/§7 | honest uncertainty, graceful failure, never a silent wrong answer | UI |
-| R12 | Optimizing for a physician who doesn't exist | USERS §2 | Phase 0 validation gate | §7 (P0) |
+| R11 | Degraded-mode dependence (worst when covering) | USERS §3/§8 | honest uncertainty, graceful failure, never a silent wrong answer | UI |
+| R12 | Optimizing for a physician who doesn't exist | USERS §2 | founder-run Phase 0 validation — no external clinician, residual risk accepted and named | §7 (P0) |
 | R14 | Standing offline-access grant / token store as a target *(deferred phase only)* | delegation, §4 | read-only, per-physician, short-lived tokens; scope re-derived from current ACL at mint; refresh secret in a secrets manager, revoked at offboarding; strictly smaller than the rejected service account | §4 |
 
 ## 6. Output verification — the clinical-accuracy gate
@@ -194,7 +251,8 @@ Provenance catches errors in what's shown; it cannot catch what was never shown
 (omission, R13). So correctness is **measured before it reaches the physician**, not
 just traceable after.
 
-- **Ground truth** per (chart-state, visit), clinician-adjudicated: the
+- **Ground truth** per (chart-state, visit), human-adjudicated — **founder in
+  v1; no practicing clinician has reviewed the labels (a named limitation)**: the
   **must-not-miss set** + the **key facts** to be stated correctly. Scored in two
   directions — omission (R13) and commission (R6).
 - **Critical subset = a code guarantee, not model judgment.** The highest-stakes
@@ -203,7 +261,8 @@ just traceable after.
   model only writes the surrounding prose. Target: **zero misses.** This is the key
   move — the worst omissions leave the model entirely.
 - **Judgment-based items** (a subtle care gap, a trend) keep a **governed recall
-  floor**, set with the clinical partner.
+  floor**, set by the in-house clinical-governance owner (founder in v1; revisit
+  with a real clinician when available).
 
 | Metric | Guards | Bar |
 |---|---|---|
@@ -214,29 +273,45 @@ just traceable after.
 - **The gate.** Any build change re-runs the **golden-chart set**; any miss on the
   critical subset or any metric below floor **fails the build** — the red/green loop
   applied to clinical output.
-- **The golden-chart set** grows from curated cases (across the states, `USERS §6`,
-  and the audit's interaction landmines, `D9`) plus **production near-misses**, so
-  it ratchets: once missed, never silently missed again. Adjudicated by the Phase 0
-  clinician.
+- **The golden-chart set** grows from curated cases (across the states and the
+  complexity mix, `USERS §3/§7`, and the audit's interaction landmines, `D9`)
+  plus **production near-misses**, so it ratchets: once missed, never silently
+  missed again. Adjudicated in-house by the Phase 0 owner (founder in v1);
+  real-clinician review of the labels is pending.
 - **Online:** watch omission leading indicators (click-through to un-surfaced data,
   overrides, "why didn't it show X") — these feed the golden set.
+- **Observability.** Two traces, both in-repo: the **disclosure log**
+  (`EventAuditLogger`, external-AI category, C1) is the compliance-grade record
+  of every LLM crossing — who, which patient, what data class, when; the
+  **golden-chart harness** is the correctness record. Per-request we log tool
+  sequence, per-step latency, tool failures, and token counts, so "what did the
+  agent do, how long did each step take, did a tool fail, what did it cost" is
+  answerable from logs; snapshot p95 latency and precision/recall floors are
+  the watched metrics (§6 table). A dedicated LLM-tracing product can be
+  layered later; it is not load-bearing for v1
+  (`docs/onboarding/PRE_SEARCH.md` §8).
 - **Limits.** The gate *bounds and monitors* omission; it does not eliminate it.
   Be precise: critical-subset misses are a **code guarantee we verify**;
-  judgment-based misses are **monitored, not guaranteed.** Depends on the same
-  clinician as Phase 0.
+  judgment-based misses are **monitored, not guaranteed.** And the gate is only
+  as clinically sound as its adjudicator — founder-adjudicated in v1, a named
+  limitation until a real clinician reviews the set.
 
 ## 7. Roadmap
 
 Foundations first; each phase gates the next.
 
-- **Phase 0 — Validate the user** *(gates all).* One design-partner internist
-  confirms the 90-second moment, the four needs, and the state mix (`USERS §3`).
+- **Phase 0 — Validate the user** *(gates all; run in-house — decided
+  2026-07-07).* No external design-partner internist: we create the
+  design-partner function ourselves — a structured, founder-run pass over the
+  90-second moment, the four needs, and the state mix (`USERS §3`) using the
+  `USERS.md` "→ Test by" prompts as the protocol. The no-clinician limitation
+  stays named; real-clinician review is a post-MVP upgrade, not a blocker.
 - **Phase 1 — Compliance & security.** BAA + zero retention; minimum-necessary
   policy; disclosure logging (`C1/C5`); close `S1/S2/S3`; module skeleton + FHIR
   read path.
 - **Phase 2 — Data-trust substrate.** Identity/dedup, filtering, normalization,
   one-pass synthesis; the deterministic critical-subset rules (§6.3 items); the
-  initial golden-chart set, labels seeded by the Phase 0 clinician.
+  initial golden-chart set, labels seeded by the in-house Phase 0 adjudication.
 - **Phase 3 — Orientation MVP** *(read-only, established patients first; gated on
   the accuracy gate passing).* **Session-bound** pre-chart — kicked from his live
   evening session or an at-login warm-up (§4) — + glanceable snapshot; provenance on
@@ -268,20 +343,25 @@ snapshot demo.
    disclosure under BAA + zero retention. (§4)
 6. **Provenance defends what's shown and satisfies FDA reviewability** — it does
    *not* reach omission. (§5 R6/R10)
-7. **Validation gates the build** — the persona is a hypothesis. (§7 P0)
+7. **Validation is run in-house and stays honest** — the persona is a hypothesis;
+   the design-partner function is self-created (no practicing clinician), and that
+   limitation is named rather than hidden. (§7 P0)
 8. **Correctness is measured before delivery, not just traceable after** — the
    accuracy gate, with zero misses on a code-enforced critical subset, is the answer
    to invisible omission (R13). (§6)
 
 ## 9. Open questions
 
-- Do we have a real design-partner internist? *(Phase 0 and the accuracy gate both
-  depend on it.)*
-- **Buyer named — the hospital CTO** (the case study's own standard: *defend it in front of a hospital CTO deciding whether to put it in front of their physicians*). **Still open:** the CTO's success metrics (throughput, liability, compliance, quality scores) vs. the physician-user's (eye-contact, pajama-time) are partly in tension — which we're held to shapes the definition of success. (`USERS §9`)
+- ~~Do we have a real design-partner internist?~~ **Decided 2026-07-07: no — and
+  we are not recruiting one this sprint; the design-partner function is created
+  in-house (§7 P0).** The open question is now *when and how a real clinician
+  reviews the persona and the golden-chart labels* — both carry the
+  founder-adjudication limitation until then.
+- **Buyer named — the hospital CTO** (the case study's own standard: *defend it in front of a hospital CTO deciding whether to put it in front of their physicians*). **Still open:** the CTO's success metrics (throughput, liability, compliance, quality scores) vs. the physician-user's (eye-contact, pajama-time) are partly in tension — which we're held to shapes the definition of success. (`USERS §10`)
 - Who owns clinical governance of the critical-subset definition and the metric
-  floors? (§6)
+  floors? *(Founder by default in v1 — a named gap, not an answer.)* (§6)
 - What latency does the between-patient moment tolerate? *(95th-percentile target,
-  set with the partner.)*
+  set during in-house Phase 0; revisit with a real clinician.)*
 - De-identification: any task where we can avoid sending identified data at all?
   *(Constrained by `D7/D8` — treat as unreliable for v1.)*
 - The **offline-grant model** for unattended overnight batch (§4, deferred): does
@@ -292,6 +372,7 @@ snapshot demo.
 
 ---
 
-*The Agent Implementation Audit (`docs/onboarding/AGENT-IMPL-AUDIT.md`) is the
-evidence base for every finding cited here; specialist terms are in
-`docs/onboarding/GLOSSARY.md`.*
+*The audit ([`AUDIT.md`](AUDIT.md); its AI-impact prioritization is Part 0)
+is the evidence base for every finding
+cited here; the use cases (UC1–UC5) are defined in [`USERS.md`](USERS.md) §5;
+specialist terms are in `docs/onboarding/GLOSSARY.md`.*
