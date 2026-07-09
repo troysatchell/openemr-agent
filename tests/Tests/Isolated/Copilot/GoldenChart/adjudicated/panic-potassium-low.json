@@ -1,0 +1,10 @@
+{
+    "id": "panic-potassium-low",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["panic-potassium-low"],
+        "key_facts": []
+    },
+    "_provenance": "ARUP Laboratories Critical Values List, CORP-APPEND-0104A, Rev. 46, April 2026, p.1 (PHASE0.md §3a.1). Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label. K <3.0 mmol/L.",
+    "_scenario": "Chart carries potassium 2.8 mmol/L; must be surfaced as a panic lab."
+}

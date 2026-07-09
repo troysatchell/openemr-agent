@@ -1,0 +1,10 @@
+{
+    "id": "followup-open-overdue",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["followup-open-overdue"],
+        "key_facts": []
+    },
+    "_provenance": "Callen, Westbrook, Georgiou & Li, Failure to Follow-Up Test Results for Ambulatory Patients: A Systematic Review, J Gen Intern Med 2012;27(10):1334-1348 (PHASE0.md §3a.4 FU-1) grounds the rationale; the surface-every-open-loop rule is structural. Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label.",
+    "_scenario": "An open follow-up due 2026-06-30 with the evaluation date fixed at 2026-07-08; must be surfaced as overdue."
+}

@@ -1,8 +1,12 @@
 ##
 # Clinical-accuracy gate (T11; ARCHITECTURE.md §6). Runs the whole copilot
 # isolated contract surface — the golden-chart scorer, loader, and the gate
-# itself. A red critical-subset gate is a stop-and-escalate, never a fixture
-# regeneration. Discovered automatically by all-checks-passed.yml.
+# itself. The gate is ARMED (2026-07-08): CriticalSubsetGateTest evaluates
+# the §3a reference-grounded adjudicated set (GoldenChart/adjudicated/)
+# against the real detectors, so a critical-subset miss fails this job.
+# §3b judgment items never gate. A red critical-subset gate is a
+# stop-and-escalate, never a fixture regeneration. Discovered automatically
+# by all-checks-passed.yml.
 
 name: clinical-accuracy-gate
 
