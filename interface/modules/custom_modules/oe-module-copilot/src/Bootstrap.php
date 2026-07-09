@@ -24,6 +24,7 @@ use OpenEMR\Common\Database\QueryUtils;
 use OpenEMR\Common\Http\HttpRestRequest;
 use OpenEMR\Common\Uuid\UuidRegistry;
 use OpenEMR\Events\RestApiExtend\RestApiCreateEvent;
+use OpenEMR\Events\RestApiExtend\RestApiScopeEvent;
 use OpenEMR\Modules\Copilot\Audit\EventAuditDisclosureLogger;
 use OpenEMR\Modules\Copilot\Chart\ChartReader;
 use OpenEMR\Modules\Copilot\Chart\FhirChartMapper;
@@ -73,6 +74,29 @@ class Bootstrap
     public function subscribeToEvents(): void
     {
         $this->eventDispatcher->addListener(RestApiCreateEvent::EVENT_HANDLE, $this->registerApiRoutes(...));
+        $this->eventDispatcher->addListener(RestApiScopeEvent::EVENT_TYPE_GET_SUPPORTED_SCOPES, $this->registerApiScopes(...));
+    }
+
+    /**
+     * Registers the OAuth2 scopes the module's routes require (T20 live
+     * smoke finding): the core dispatcher derives each route's required
+     * scope from its FINAL path segment (HttpRestParsedRoute) as
+     * `user/<segment>.<read|write>`, and rejects any token whose scope was
+     * never registered — so without this listener every module route 401s
+     * before the guard wrapper even runs. Scope names are therefore
+     * segment-generic ('health', 'ready', 'turn'); acceptable for v1,
+     * revisit if core ever claims those resource names.
+     */
+    public function registerApiScopes(RestApiScopeEvent $event): void
+    {
+        if ($event->getApiType() !== RestApiScopeEvent::API_TYPE_STANDARD) {
+            return;
+        }
+
+        $event->addScope('user', 'ping', 'read');
+        $event->addScope('user', 'health', 'read');
+        $event->addScope('user', 'ready', 'read');
+        $event->addScope('user', 'turn', 'write');
     }
 
     public function registerApiRoutes(RestApiCreateEvent $event): void
