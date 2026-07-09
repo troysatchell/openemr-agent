@@ -39,23 +39,39 @@ authenticates as whichever OpenEMR user is logged into the EMR session and
 drives its own module page (`public/index.php`) via a same-origin AJAX
 endpoint (`public/ajax.php`), CSRF-protected like every other module page.
 
-1. **Seed the physician and today's schedule** (one-time; both steps PAUSE
-   for a manual step in the OpenEMR UI):
+0. **Check your OAuth client's scopes first.** The provider/schedule steps
+   need `user/user.read`, `user/appointment.write`, and `user/facility.read`.
+   A client's scope grant is fixed at registration, so if
+   `~/.copilot-demo/client.json` was registered before those scopes were
+   added to this script (symptom: `provider` reports `rows_seen=0`, or
+   `schedule` fails creating appointments), re-register once:
+   ```bash
+   rm ~/.copilot-demo/client.json
+   sh copilot-demo.sh register   # pauses: enable the NEW client in Admin → System → API Clients
+   sh copilot-demo.sh token
+   ```
+1. **Seed the physician and today's schedule** (one-time):
    ```bash
    cd interface/modules/custom_modules/oe-module-copilot/demo
-   DR_PASS='<pick a password>' sh copilot-demo.sh provider
+   sh copilot-demo.sh provider
    sh copilot-demo.sh schedule
    ```
-   `provider` pauses for you to create the demo physician (Administration →
-   Users → New User: username `dr.tran`, the password you set via
-   `$DR_PASS`, name Ellis Tran, Provider + Authorized checked), then resolves
-   the new user's numeric id via `GET /api/user` (falls back to asking you to
-   enter it by hand if it can't uniquely resolve). `schedule` seeds two more
-   synthetic patients (Rafael Mendoza, June Park) alongside the existing Alma
-   Reyes and books all three onto `dr.tran`'s calendar for today at 09:00,
-   09:30, and 10:15.
-2. **Log in to OpenEMR as `dr.tran`** (the password from `$DR_PASS`).
-3. Open the **Co-Pilot** tab (added to the main menu by this module).
+   `provider` first tries to resolve an existing `dr.tran` via
+   `GET /api/user` — if she already exists it records her numeric id and
+   never pauses (and `DR_PASS` is not needed). Only when she can't be found
+   does it pause for you to create her (Administration → Users → New User:
+   username `dr.tran`, a password you choose — export it as `DR_PASS='<pick
+   a password>'` so the pause branch runs; name Ellis Tran; **Provider** and
+   **Calendar** checked; Access Control **Physicians**), with a manual-id
+   fallback if resolution still fails. `schedule` seeds two more synthetic
+   patients (Rafael Mendoza, June Park) alongside the existing Alma Reyes
+   and books all three onto `dr.tran`'s calendar for today at 09:00, 09:30,
+   and 10:15.
+2. **Log in to OpenEMR as `dr.tran`**.
+3. Open the **Co-Pilot** tab. Placement depends on the user's ACLs: admin
+   sees it right after **Modules**; a Physicians-group user like dr.tran has
+   no Modules/Admin menus, so for her it sits between **Fees** and
+   **Procedures** (behind the hamburger on narrow windows).
 4. Confirm the **Today's patients** dropdown lists the three seeded
    appointments; pick one — the glanceable snapshot (must-not-miss cards,
    unevaluable items, current meds/allergies with citation chips) renders

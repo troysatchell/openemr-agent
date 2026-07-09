@@ -124,25 +124,61 @@ PY
 # authenticated session's authUserID. Physician account creation itself is a
 # manual UI step (Administration -> Users -> New User): this script only
 # reads the result back afterwards, via the guarded REST API with the admin
-# token, never a raw table read.
+# token, never a raw table read. Resolution is attempted FIRST — if the
+# physician already exists (idempotent reruns, or you created the user ahead
+# of time), the creation pause is skipped entirely and DR_PASS is not needed.
 provider() {
     [ -f "$STATE/provider.json" ] && { echo "provider already resolved ($STATE/provider.json)"; return; }
     DR_USER="${DR_USER:-dr.tran}"
     export DR_USER
-    : "${DR_PASS:?set DR_PASS (the demo physician login password) before running the provider step -- never hardcoded, never echoed}"
-    echo ""
-    echo ">>> ACTION: in OpenEMR go to Administration -> Users -> New User and create the"
-    echo ">>> demo physician: username '${DR_USER}', password from \$DR_PASS (type it into the"
-    echo ">>> form yourself — this script never echoes it), name Ellis / Tran, check the"
-    echo ">>> Provider and Authorized-user boxes, Save. Then press Enter."
-    read -r _
 
-    # GET /api/user exposes the numeric users.id (PractitionerRestController's
-    # /api/practitioner does not — see src/RestControllers/UserRestController.php
-    # WHITELISTED_FIELDS vs PractitionerRestController's). Filter client-side
-    # by username, falling back to first/last name, since UserService only
-    # includes 'username' in the response when explicitly requested.
-    match="$(py <<'PY'
+    match="$(resolve_provider_id)"
+    if [ "${match#OK }" = "$match" ]; then
+        # Not resolvable yet — walk through creating the user, then retry.
+        : "${DR_PASS:?set DR_PASS (the demo physician login password) before running the provider step -- never hardcoded, never echoed}"
+        echo ""
+        echo ">>> ACTION: in OpenEMR go to Administration -> Users -> New User and create the"
+        echo ">>> demo physician: username '${DR_USER}', password from \$DR_PASS (type it into the"
+        echo ">>> form yourself — this script never echoes it), name Ellis / Tran, check the"
+        echo ">>> Provider and Calendar boxes, Access Control 'Physicians', Save. Then press Enter."
+        read -r _
+        match="$(resolve_provider_id)"
+    fi
+
+    case "$match" in
+        "OK "*)
+            provider_id="${match#OK }"
+            python3 -c 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"id": int(sys.argv[2]), "username": sys.argv[3]}))' \
+                "$STATE/provider.json" "$provider_id" "$DR_USER"
+            echo "provider resolved: id=$provider_id username=$DR_USER"
+            ;;
+        *)
+            echo ""
+            echo "Could not uniquely resolve ${DR_USER}'s numeric users.id from GET /api/user."
+            echo "(If rows_seen=0 above: your OAuth client predates the user/user.read scope —"
+            echo " delete $STATE/client.json and rerun the register + token steps.)"
+            echo "Or look it up yourself: Administration -> Users -> edit the user; the numeric"
+            echo "id is shown in the edit page's URL (...&id=<N>)."
+            printf "Enter the numeric users.id: "
+            read -r provider_id
+            case "$provider_id" in
+                ''|*[!0-9]*) echo "ERROR: not a positive integer: '$provider_id'"; exit 1 ;;
+            esac
+            python3 -c 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"id": int(sys.argv[2]), "username": sys.argv[3]}))' \
+                "$STATE/provider.json" "$provider_id" "$DR_USER"
+            echo "provider recorded: id=$provider_id username=$DR_USER"
+            ;;
+    esac
+}
+
+# GET /api/user exposes the numeric users.id (PractitionerRestController's
+# /api/practitioner does not — see src/RestControllers/UserRestController.php
+# WHITELISTED_FIELDS vs PractitionerRestController's). Filter client-side
+# by username, falling back to first/last name, since UserService only
+# includes 'username' in the response when explicitly requested.
+# Prints "OK <id>" on a unique match; "AMBIGUOUS" otherwise.
+resolve_provider_id() {
+    py <<'PY'
 import json, os, subprocess, sys
 base, state = os.environ['BASE'], os.environ['STATE']
 dr_user = os.environ['DR_USER']
@@ -179,30 +215,6 @@ else:
     )
     print("AMBIGUOUS")
 PY
-)"
-
-    case "$match" in
-        "OK "*)
-            provider_id="${match#OK }"
-            python3 -c 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"id": int(sys.argv[2]), "username": sys.argv[3]}))' \
-                "$STATE/provider.json" "$provider_id" "$DR_USER"
-            echo "provider resolved: id=$provider_id username=$DR_USER"
-            ;;
-        *)
-            echo ""
-            echo "Could not uniquely resolve ${DR_USER}'s numeric users.id from GET /api/user."
-            echo "Look it up yourself: Administration -> Users -> edit the user you just created;"
-            echo "the numeric id is shown in the edit page's URL (...&id=<N>)."
-            printf "Enter the numeric users.id: "
-            read -r provider_id
-            case "$provider_id" in
-                ''|*[!0-9]*) echo "ERROR: not a positive integer: '$provider_id'"; exit 1 ;;
-            esac
-            python3 -c 'import json,sys; open(sys.argv[1],"w").write(json.dumps({"id": int(sys.argv[2]), "username": sys.argv[3]}))' \
-                "$STATE/provider.json" "$provider_id" "$DR_USER"
-            echo "provider recorded: id=$provider_id username=$DR_USER"
-            ;;
-    esac
 }
 
 # Seeds today's 3-patient schedule for the resolved provider (reuses Alma
