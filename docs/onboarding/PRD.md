@@ -58,8 +58,8 @@ Binary / testable:
   (`ARCHITECTURE.md` §6).
 - Judgment-based must-not-miss items meet the governed **recall** floor; flagged
   items meet the governed **precision** floor (no alert-fatigue storm).
-- Snapshot renders inside the between-patient window (**p95 target — TBD with
-  partner**).
+- Snapshot renders inside the between-patient window (**p95 target owned
+  in-house — set by the Phase 0 validation pass**).
 - **Honest degraded mode:** when data is stale/missing or the model is unsure, it
   says so — never a silent wrong answer.
 - Operates **only within the physician's ACL scope**.

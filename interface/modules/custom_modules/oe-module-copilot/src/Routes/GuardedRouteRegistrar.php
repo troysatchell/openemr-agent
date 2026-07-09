@@ -48,9 +48,18 @@ final class GuardedRouteRegistrar
      * parameters plus trailing extras (the HttpRestRequest and the globals
      * bag — see HttpRestRouteHandler::dispatch), so the wrapper locates the
      * request positionally and passes every original argument through.
+     *
+     * Registering the same route twice is a programming error and throws: a
+     * silent overwrite could replace an earlier guard/ACL pairing (S5).
      */
     public function register(string $route, AclRequirement $acl, \Closure $handler): void
     {
+        if (isset($this->routes[$route])) {
+            throw new \LogicException(
+                "Duplicate copilot route registration for '{$route}'; each route may be guarded exactly once."
+            );
+        }
+
         $authorizationCheck = $this->authorizationCheck;
         $this->routes[$route] = static function (mixed ...$args) use ($authorizationCheck, $acl, $handler): mixed {
             $request = null;

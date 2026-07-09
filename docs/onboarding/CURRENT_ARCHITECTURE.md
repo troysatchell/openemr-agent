@@ -54,7 +54,7 @@ The legacy patterns are explicitly *not* the standard for new code.
 
 ## 3. Module map (high level)
 
-```
+```text
                           ┌─────────────────────────────────────────┐
    Browser / API client   │  Web pages (interface/**, root *.php)    │
         │                 │  REST+FHIR (apis/dispatch.php)           │
@@ -153,7 +153,7 @@ Understanding this fork explains most "where does X get initialized?" questions.
 
 ### Flow A — A user logs in (legacy tier)
 
-```
+```text
 index.php  ──redirect──▶  interface/login/login.php   (renders Twig form; sets $ignoreAuth=true)
                                      │ POST authUser/clearPass
                                      ▼
@@ -179,7 +179,7 @@ normalization); passwords are passed by reference and zeroed with
 
 ### Flow B — A REST/FHIR API request
 
-```
+```text
 apis/dispatch.php
   HttpRestRequest::createFromGlobals()  (Symfony HttpFoundation)
   ApiApplication::run()  ──▶  OEHttpKernel (Symfony HttpKernel) ──▶ subscriber chain:
@@ -210,7 +210,7 @@ project's own logging standard.
 
 ### Flow C — A background job runs ("Ajax piggyback" / cron)
 
-```
+```text
 Triggers: browser AJAX poll (while logged in) │ cron CLI │ REST │ bin/console
                                      ▼
    library/ajax/execute_background_services.php

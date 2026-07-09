@@ -20,8 +20,11 @@
 
 This repository is a fork of OpenEMR being extended with a **Clinical Co-Pilot**:
 an AI agent embedded in OpenEMR that orients a physician to the next patient in
-the ~90 seconds between rooms. The agent is planned, not yet implemented — the
-plan and its evidence base are the documents below.
+the ~90 seconds between rooms. This branch lays the groundwork — the
+`oe-module-copilot` module skeleton (default-deny route wrapper, data-trust
+normalizers, external-AI disclosure logging) and the plan and evidence base in
+the documents below — while the agent's orientation flow itself is still being
+built.
 
 - **Deployed app (live):** <https://openemr-production-4eba.up.railway.app>
   — hosted on Railway (two services: OpenEMR + MariaDB); deployment scaffolding

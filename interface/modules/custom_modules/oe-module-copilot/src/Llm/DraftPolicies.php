@@ -40,6 +40,10 @@ final class DraftPolicies
             'follow_ups' => ['description', 'due'],
         ];
 
+        // v1 DRAFT: the three tasks intentionally share one allowlist until
+        // per-task minimum-necessary scopes are signed off (C5). Narrowing any
+        // task's fields is a clinical-governance decision, not an engineering
+        // one — see the class docblock; escalate, don't differentiate here.
         return [
             CopilotTask::Snapshot->value => new FieldAllowlist($sharedFields),
             CopilotTask::FollowUpQa->value => new FieldAllowlist($sharedFields),
