@@ -19,7 +19,10 @@
  * draft table now FAILS the build instead of reporting NOT ARMED; (2) a
  * label whose detector never fires can no longer hide behind the unarmed
  * gate; (3) an adjudicated fixture without a provenance citation is a
- * failure — no adjudicated case without provenance.
+ * failure — no adjudicated case without provenance; (4) a spurious detector
+ * flag on an adjudicated case is a HARD-ZERO failure (a data-trust bug) —
+ * it can no longer hide above the old precision floor (T15, decisions
+ * locked 2026-07-09).
  *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
@@ -275,6 +278,40 @@ class CriticalSubsetGateTest extends TestCase
         $this->assertTrue($report->armed, 'Signed-off §3a labels must ARM the gate: ' . $report->summary);
         $this->assertSame([], $report->criticalMisses, 'Zero misses on the critical subset is the point (R13): ' . $report->summary);
         $this->assertTrue($report->passed, $report->summary);
+    }
+
+    /**
+     * One spurious flag among 14 clean cases puts aggregate precision at
+     * 14/15 ≈ 0.93 — comfortably above the old 0.8 floor, so the OLD gate
+     * would have passed it. The two-track rework makes any false flag on an
+     * adjudicated case a hard-zero failure (a data-trust bug, not a
+     * precision drag); this pins that an unexpected detector finding can
+     * never again hide above a rate threshold.
+     */
+    public function testAnUnexpectedDetectorFlagHardFailsTheArmedGate(): void
+    {
+        $cases = (new GoldenChartCaseLoader())->loadFromDirectory(self::adjudicatedDir());
+        $scenarios = self::chartScenarios();
+
+        $noiseInjected = false;
+        $pairs = [];
+        foreach ($cases as $case) {
+            $flagged = self::mapFindingsToLabels(self::runDetectors($scenarios[$case->id]));
+            if (!$noiseInjected) {
+                $flagged[] = 'unexpected:synthetic-noise-finding';
+                $noiseInjected = true;
+            }
+            $pairs[] = [$case, new CaseResult($flagged, $flagged, 0, 0)];
+        }
+        $this->assertTrue($noiseInjected);
+
+        $report = (new AccuracyGate(self::PRECISION_FLOOR, self::FACTUAL_FLOOR))->evaluate($pairs);
+
+        $this->assertTrue($report->armed);
+        $this->assertSame([], $report->criticalMisses, 'The injected noise is a false flag, not a miss.');
+        $this->assertSame(1, $report->falseFlagCount);
+        $this->assertFalse($report->criticalTrackPassed, 'A spurious flag on an adjudicated case is a data-trust bug — hard zero, not a rate.');
+        $this->assertFalse($report->passed, $report->summary);
     }
 
     public function testEveryAdjudicatedFixtureCarriesProvenance(): void
