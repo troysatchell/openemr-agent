@@ -18,7 +18,7 @@ Phase 3 read-only snapshot demo.
 ## In Progress
 
 ### Phase 1 — Compliance & security *(TDD run 2026-07-08 — all coding tickets green; awaiting human review of flagged items)*
-- [ ] LLM procurement decision: BAA + zero data retention (Anthropic direct vs. cloud BAA e.g. Bedrock) (C5) — **human decision, only open coding-run blocker for Phase 1 Done**
+- [x] LLM procurement decision (C5) — **decided 2026-07-09: Anthropic direct**; compliance terms stay program-stipulated. Doc correction shipped with T15 (`352b0a8`): "BAA + ZDR" is not a package on the first-party API (ZDR and HIPAA-ready orgs are mutually exclusive) — real-deployment posture is BAA + HIPAA-ready org + minimum-necessary + disclosure logging (ARCHITECTURE §4)
 - [x] Minimum-necessary disclosure policy — enforcement done `892db37` (payload + Disclosure born together; undisclosed sends unrepresentable). **Review:** `DraftPolicies::v1()` field lists are DRAFT pending human sign-off
 - [x] Disclosure logging: `EventAuditLogger` external-AI category (C1/C5) — done `9781399` (12/12); production `forEventAuditLogger()` sink pending live-stack verification
 - [x] Close S1 (error leak), S2/S3 (cookie hardening) — done `87bd9b3`; live-verified over HTTP+HTTPS incl. full login smoke. **Review:** S2 knowingly degrades legacy multi-window re-login restore (restoreSession.php reads document.cookie); single-login unaffected
@@ -31,7 +31,7 @@ Phase 3 read-only snapshot demo.
 - [x] Normalizers: empty-string (D1), booleans (D4), dates (D0/D6) — green `27a6fc6`
 - [x] One-pass synthesis (D9) — done `001eaa0` (9/9); provenance SourceRefs on every item
 - [x] Deterministic critical-subset detectors — done `faeb658` (35/35; unknown → unevaluable, never silent). **Review 2026-07-08:** `draftV1()` tables re-based on cited references (ARUP Rev.46, drug labels — PHASE0.md §3a) and signed off by the acting clinical-governance owner as ONE decision with the §3a labels (PHASE0.md §3c). The sulfonamides grouping stays UNSOURCED (DA-4) — not signed off, never gated
-- [x] Golden-chart harness + CI accuracy gate — done `b74cddf` (21/21 + `clinical-accuracy-gate.yml`, auto-required via all-checks-passed). **Gate is ARMED (2026-07-08)** on the §3a reference-grounded adjudicated set (`GoldenChart/adjudicated/`, `CriticalSubsetGateTest`); §3b judgment items stay PROVISIONAL and never gate; synthetic fixtures never arm or fail it
+- [x] Golden-chart harness + CI accuracy gate — done `b74cddf` (21/21 + `clinical-accuracy-gate.yml`, auto-required via all-checks-passed). **Gate is ARMED (2026-07-08)** on the §3a reference-grounded adjudicated set (`GoldenChart/adjudicated/`, `CriticalSubsetGateTest`); §3b judgment items stay PROVISIONAL and never gate; synthetic fixtures never arm or fail it. **Reworked 2026-07-09 to the two-track model (T15 `352b0a8`):** hard zeros gate (any miss, any false flag, any incorrect stated fact); precision/factual rates are monitors only; judgment rates are provisional regression thresholds, dormant until §3b adjudication (`HardZeroGateTest` frozen, 12 new tests; 275 copilot isolated green)
 
 **Run notes (2026-07-08):** frozen-test TDD loop — orchestrator authored+froze all tests (one freeze commit per ticket branch), agents/orchestrator implemented to green; history structured as per-ticket feature branches merged --no-ff. Full isolated suite: 3694 tests, 0 failures, 0 regressions. PHPStan full-codebase run environmentally blocked locally (container OOM) — php -l + phpcs clean; PHPStan rides CI. One frozen-test transcription bug (ChartReaderTest spy plumbing) found by an engineer agent, fixed + documented in `fd71c60`.
 
@@ -45,7 +45,15 @@ Read-only, established patients only. Logic layer first (Wave 1, Sonnet-5 agent 
 - [ ] Session-bound pre-chart of the day's schedule (UC3)
 - [ ] Latency instrumentation per `PHASE0.md` §2.4 (per-step timing, cache-hit flag, first-paint vs full-render, fallback signal)
 
-**Escalation (human, one decision):** production wiring needs a `ref` citation-token field (opaque `sourceType:sourceId` row pointer, no PHI content) added to each data class in `DraftPolicies::v1()` so payload facts are citable and the verifier can ground claims — that file is governance-owned (its header says escalate, don't edit), and its field lists are already an open sign-off item. Approve/adjust alongside that sign-off.
+**Escalation resolved 2026-07-09:** founder approved the `ref` citation-token field (opaque `sourceType:sourceId` row pointer, no PHI content) for each data class in `DraftPolicies::v1()` — implementation in Wave 2 (T16). Observability decision also locked: in-repo PHI-free JSONL trace, correlation ID passed explicitly (never ambient — S4's lesson), disclosure log joins on the correlation ID; no third-party trace sink (C4).
+
+### Graded deliverables not yet started *(named 2026-07-09 so they are not discovered Saturday night — Sunday final)*
+- [ ] Strict tool I/O schemas as the contract — every tool input/output validated against a declared schema; the contract, not the implementation, is the source of truth
+- [ ] Runnable API collection (Postman/Bruno) covering the core agent endpoints — graders must be able to run any workflow without reading source
+- [ ] Load/stress tests at 10 and 50 concurrent users against the deployed agent; p50/p95/p99 + error rate at each level
+- [ ] Baseline CPU/memory/latency/throughput captured under those load scenarios
+- [ ] AI cost analysis at 100 / 1K / 10K / 100K users — architecture shifts per tier (extractable inference service §2, P3 pooling, P5 async audit sink, P6 index, provider-by-PHI-residency), not cost-per-token × n
+- [ ] Verify domain-constraint enforcement is truly covered by `ClaimVerifier` — source attribution (claim traces to a record) vs contradiction rejection (response conflicts with the record/detector findings) are different requirements; if only the former exists, the latter is unbuilt and graded
 
 ---
 
