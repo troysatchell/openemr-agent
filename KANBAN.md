@@ -35,6 +35,18 @@ Phase 3 read-only snapshot demo.
 
 **Run notes (2026-07-08):** frozen-test TDD loop — orchestrator authored+froze all tests (one freeze commit per ticket branch), agents/orchestrator implemented to green; history structured as per-ticket feature branches merged --no-ff. Full isolated suite: 3694 tests, 0 failures, 0 regressions. PHPStan full-codebase run environmentally blocked locally (container OOM) — php -l + phpcs clean; PHPStan rides CI. One frozen-test transcription bug (ChartReaderTest spy plumbing) found by an engineer agent, fixed + documented in `fd71c60`.
 
+### Phase 3 — Orientation MVP *(started 2026-07-08 evening — the accuracy gate it is gated on is ARMED and passing)*
+Read-only, established patients only. Logic layer first (Wave 1, Sonnet-5 agent relay against orchestrator-frozen tests); wiring + UI are Wave 2.
+- [ ] Glanceable between-patient snapshot — the opening turn (UC1). **Composer logic green** `feat/t13-snapshot-composer` (12 frozen tests: findings verbatim, honest-uncertainty sections, unknown-delta ≠ quiet, earned silence R5/R7). Remaining: route + panel rendering
+- [ ] Multi-turn grounded follow-up Q&A — every turn re-grounds against the live chart (UC2). **Turn-loop core green** `feat/t12-turn-orchestrator` (13 frozen tests: fresh read per turn, disclosure-before-send C1, detector bypass R13, honest degradation R11; LlmClient is a port). Remaining: real LLM adapter (blocked on C5 endpoint decision), DB-backed ChartSnapshotProvider adapter
+- [ ] Provenance on every surfaced claim; unattributable claims not stated as fact (R6/R10). **Verification layer green** `feat/t14-verification-layer` (13 frozen tests: all-or-nothing grounding, exact-match ReferenceIndex, one canonical token mint). Remaining: UI rendering of grounded vs rejected
+- [ ] Module-injected chat panel UI with preserve-distrust UX: must-not-miss visually distinct, honest uncertainty, silence when nothing changed (R5/R11)
+- [ ] Session-bound pre-chart: kicked from the live evening session or at-login warm-up (§4) — no offline grant in v1
+- [ ] Session-bound pre-chart of the day's schedule (UC3)
+- [ ] Latency instrumentation per `PHASE0.md` §2.4 (per-step timing, cache-hit flag, first-paint vs full-render, fallback signal)
+
+**Escalation (human, one decision):** production wiring needs a `ref` citation-token field (opaque `sourceType:sourceId` row pointer, no PHI content) added to each data class in `DraftPolicies::v1()` so payload facts are citable and the verifier can ground claims — that file is governance-owned (its header says escalate, don't edit), and its field lists are already an open sign-off item. Approve/adjust alongside that sign-off.
+
 ---
 
 ## Up Next
@@ -50,16 +62,9 @@ Founder-run, in-house (decided 2026-07-07); no external clinician — limitation
 
 ## Backlog
 
-*(Phase 1 and Phase 2 moved to In Progress — 2026-07-08.)*
-
-### Phase 3 — Orientation MVP *(gated on the accuracy gate passing)*
-Read-only, established patients only.
-- [ ] Session-bound pre-chart: kicked from the live evening session or at-login warm-up (§4) — no offline grant in v1
-- [ ] Glanceable between-patient snapshot — the opening turn (UC1)
-- [ ] Multi-turn grounded follow-up Q&A — every turn re-grounds against the live chart (UC2)
-- [ ] Provenance on every surfaced claim; unattributable claims not stated as fact (R6/R10)
-- [ ] Module-injected chat panel UI with preserve-distrust UX: must-not-miss visually distinct, honest uncertainty, silence when nothing changed (R5/R11)
-- [ ] Session-bound pre-chart of the day's schedule (UC3)
+*(Phase 1 and Phase 2 moved to In Progress — 2026-07-08. Phase 3 moved to In
+Progress the same evening — the accuracy gate it was gated on is ARMED and
+passing.)*
 
 ### Phase 4 — Covering / new-patient states + on-demand *(post-MVP)*
 - [ ] Cold orientation for covering / new-patient states (UC5, S2/S3 states) — where degraded-mode matters most
