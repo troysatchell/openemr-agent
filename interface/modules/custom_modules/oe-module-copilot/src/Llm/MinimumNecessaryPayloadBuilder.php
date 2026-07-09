@@ -87,6 +87,7 @@ final class MinimumNecessaryPayloadBuilder
         string $userId,
         int $patientPid,
         \DateTimeImmutable $when,
+        ?string $correlationId = null,
     ): DisclosedPayload {
         $policy = $this->policies[$task->value] ?? null;
         if ($policy === null) {
@@ -159,7 +160,7 @@ final class MinimumNecessaryPayloadBuilder
 
         return new DisclosedPayload(
             $payload,
-            new Disclosure($userId, $patientPid, array_keys($payload), $task->value, $when),
+            new Disclosure($userId, $patientPid, array_keys($payload), $task->value, $when, $correlationId),
         );
     }
 }

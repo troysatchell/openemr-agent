@@ -64,6 +64,9 @@ final class EventAuditDisclosureLogger implements DisclosureLogger
                 'data_classes' => $disclosure->dataClasses,
                 'purpose' => $disclosure->purpose,
                 'occurred_at' => $disclosure->occurredAt->format(\DateTimeInterface::ATOM),
+                // Join key to the PHI-free trace log (T17) — key always
+                // present (null when absent) for a stable schema.
+                'correlation_id' => $disclosure->correlationId,
             ],
             JSON_THROW_ON_ERROR,
         );
