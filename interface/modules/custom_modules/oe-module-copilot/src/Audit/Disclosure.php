@@ -9,6 +9,11 @@
  * purpose, when — and refuses to exist if any answer is missing. No silent
  * coercion: blank or missing fields are a \DomainException, never defaulted.
  *
+ * The optional trailing correlationId (T17) is the ONLY join key between
+ * this PHI-carrying disclosure record and the separate PHI-free trace log —
+ * it lets a full turn be reconstructed from logs alone without ever mixing
+ * the two records into one schema (ARCHITECTURE.md §6 observability).
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -31,6 +36,7 @@ final readonly class Disclosure
         public array $dataClasses,
         public string $purpose,
         public \DateTimeImmutable $occurredAt,
+        public ?string $correlationId = null,
     ) {
         if (trim($userId) === '') {
             throw new \DomainException('Disclosure requires the disclosing user — userId must be non-blank');
@@ -52,6 +58,10 @@ final readonly class Disclosure
 
         if (trim($purpose) === '') {
             throw new \DomainException('Disclosure requires a purpose — purpose must be non-blank (C5)');
+        }
+
+        if ($correlationId !== null && trim($correlationId) === '') {
+            throw new \DomainException('Disclosure correlationId, when provided, must be non-blank');
         }
     }
 }

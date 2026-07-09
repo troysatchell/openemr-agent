@@ -13,6 +13,10 @@
  * is no third state and no silent partial result — a model failure never
  * looks like a quiet, correct answer (R11).
  *
+ * The optional trailing correlationId (T17) lets the caller echo the turn's
+ * trace correlation ID back for support/audit lookups (ARCHITECTURE.md §6
+ * observability).
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -42,6 +46,7 @@ final readonly class TurnResult
         public bool $degraded,
         public ?string $degradedReason,
         public ?Disclosure $disclosure,
+        public ?string $correlationId = null,
     ) {
         if ($degraded) {
             if ($answer !== null) {

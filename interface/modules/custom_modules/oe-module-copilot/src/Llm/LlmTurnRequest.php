@@ -11,6 +11,10 @@
  * (\DomainException), before anything is logged or sent — there is nothing
  * to answer.
  *
+ * The optional trailing correlationId (T17) carries the orchestrator's
+ * per-turn trace correlation ID explicitly across the LLM port boundary —
+ * never via an ambient global (AUDIT S4).
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -31,11 +35,16 @@ final readonly class LlmTurnRequest
         public DisclosedPayload $payload,
         public string $question,
         public array $priorTurns,
+        public ?string $correlationId = null,
     ) {
         if (trim($question) === '') {
             throw new \DomainException(
                 'A blank question cannot be answered — refused before anything is logged or sent'
             );
+        }
+
+        if ($this->correlationId !== null && trim($this->correlationId) === '') {
+            throw new \DomainException('LlmTurnRequest correlationId, when provided, must be non-blank');
         }
     }
 }

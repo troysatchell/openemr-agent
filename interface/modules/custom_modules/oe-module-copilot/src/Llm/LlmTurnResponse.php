@@ -9,6 +9,10 @@
  * chart happens downstream in ClaimVerifier; nothing here is fact until then
  * (R6/R10).
  *
+ * The optional trailing tokenUsage (T17) carries model identity and token
+ * counts for the audit trace — the vendor API does not log this for us; the
+ * trace is our record of it (ARCHITECTURE.md §6 observability).
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -20,6 +24,7 @@ declare(strict_types=1);
 
 namespace OpenEMR\Modules\Copilot\Llm;
 
+use OpenEMR\Modules\Copilot\Observability\TokenUsage;
 use OpenEMR\Modules\Copilot\Verification\DraftClaim;
 
 final readonly class LlmTurnResponse
@@ -29,6 +34,7 @@ final readonly class LlmTurnResponse
      */
     public function __construct(
         public array $claims,
+        public ?TokenUsage $tokenUsage = null,
     ) {
     }
 }
