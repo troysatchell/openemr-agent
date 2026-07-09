@@ -24,6 +24,11 @@ namespace OpenEMR\Modules\Copilot\Observability;
 
 final readonly class StepRecord
 {
+    /**
+     * groundedCount / rejectedCount (T19) carry the ClaimVerifier verdict on
+     * the `ground` step only — counts, never claim content (the trace stays
+     * PHI-free by schema). Null on every other step.
+     */
     public function __construct(
         public string $step,
         public \DateTimeImmutable $startedAt,
@@ -31,6 +36,8 @@ final readonly class StepRecord
         public StepOutcome $outcome,
         public ?string $errorClass = null,
         public ?TokenUsage $tokenUsage = null,
+        public ?int $groundedCount = null,
+        public ?int $rejectedCount = null,
     ) {
         if (trim($step) === '') {
             throw new \DomainException('StepRecord requires a non-blank step name');
@@ -38,6 +45,10 @@ final readonly class StepRecord
 
         if ($durationMs < 0.0) {
             throw new \DomainException('StepRecord durationMs must be >= 0');
+        }
+
+        if (($groundedCount !== null && $groundedCount < 0) || ($rejectedCount !== null && $rejectedCount < 0)) {
+            throw new \DomainException('StepRecord grounded/rejected counts must be >= 0 when present');
         }
 
         if ($outcome === StepOutcome::Ok && $errorClass !== null) {

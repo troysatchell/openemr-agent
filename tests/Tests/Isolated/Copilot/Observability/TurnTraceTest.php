@@ -147,14 +147,21 @@ class TurnTraceTest extends TestCase
         };
     }
 
-    private function scriptedLlm(bool $unavailable = false, ?TokenUsage $usage = null): LlmClient
+    /**
+     * @param list<\OpenEMR\Modules\Copilot\Verification\DraftClaim> $claims
+     */
+    private function scriptedLlm(bool $unavailable = false, ?TokenUsage $usage = null, array $claims = []): LlmClient
     {
-        return new class ($unavailable, $usage) implements LlmClient {
+        return new class ($unavailable, $usage, $claims) implements LlmClient {
             public ?LlmTurnRequest $captured = null;
 
+            /**
+             * @param list<\OpenEMR\Modules\Copilot\Verification\DraftClaim> $claims
+             */
             public function __construct(
                 private readonly bool $unavailable,
                 private readonly ?TokenUsage $usage,
+                private readonly array $claims,
             ) {
             }
 
@@ -165,7 +172,7 @@ class TurnTraceTest extends TestCase
                     throw new LlmUnavailableException('vendor-transport-internals');
                 }
 
-                return new LlmTurnResponse([], $this->usage);
+                return new LlmTurnResponse($this->claims, $this->usage);
             }
         };
     }
@@ -367,6 +374,55 @@ class TurnTraceTest extends TestCase
 
         // The model id must appear — the trace, not the vendor, is our audit trail.
         $this->assertStringContainsString('claude-test-model-1', $raw);
+    }
+
+    /**
+     * ADDITIVE (T19, within the freeze policy): the ground step carries the
+     * verifier's verdict COUNTS — counts only, never claim content, so the
+     * trace stays PHI-free while the dashboard can report a verification
+     * pass/fail rate.
+     */
+    public function testTheGroundStepRecordsVerifierVerdictCounts(): void
+    {
+        $claims = [
+            new \OpenEMR\Modules\Copilot\Verification\DraftClaim('On warfarin.', ['lists:med-warf']),
+            new \OpenEMR\Modules\Copilot\Verification\DraftClaim('Cholesterol well controlled.', ['lists:invented-source']),
+        ];
+
+        $recorder = $this->collectingRecorder();
+        $orchestrator = $this->orchestrator($this->capturingLogger(), $this->scriptedLlm(claims: $claims), $recorder);
+        $orchestrator->runTurn($this->physician(), 'uuid-1', self::QUESTION);
+
+        $byName = [];
+        foreach ($recorder->steps as $step) {
+            $byName[$step->step] = $step;
+        }
+        $this->assertSame(1, $byName['ground']->groundedCount, 'One claim resolves in the live chart.');
+        $this->assertSame(1, $byName['ground']->rejectedCount, 'The invented citation is rejected — and that verdict must be countable from logs.');
+        $this->assertNull($byName['llm']->groundedCount, 'Verdict counts belong to the ground step only.');
+
+        // And the JSONL schema carries the counts under fixed keys.
+        $this->jsonlPath = tempnam(sys_get_temp_dir(), 'copilot-trace-') ?: self::fail('tempnam failed');
+        $jsonlOrchestrator = $this->orchestrator(
+            $this->capturingLogger(),
+            $this->scriptedLlm(claims: $claims),
+            new JsonlTraceRecorder($this->jsonlPath),
+        );
+        $jsonlOrchestrator->runTurn($this->physician(), 'uuid-1', self::QUESTION);
+
+        $raw = file_get_contents($this->jsonlPath);
+        $this->assertNotFalse($raw);
+        $groundLine = null;
+        foreach (array_filter(explode("\n", trim($raw))) as $line) {
+            $decoded = json_decode($line, true, 8, JSON_THROW_ON_ERROR);
+            $this->assertIsArray($decoded);
+            if ($decoded['step'] === 'ground') {
+                $groundLine = $decoded;
+            }
+        }
+        $this->assertIsArray($groundLine);
+        $this->assertSame(1, $groundLine['grounded_count']);
+        $this->assertSame(1, $groundLine['rejected_count']);
     }
 
     public function testStepRecordRefusesInconsistentConstruction(): void
