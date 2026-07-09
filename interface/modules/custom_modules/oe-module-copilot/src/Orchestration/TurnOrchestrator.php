@@ -59,7 +59,6 @@ use OpenEMR\Modules\Copilot\Observability\TraceContext;
 use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
 use OpenEMR\Modules\Copilot\Verification\ClaimVerifier;
 use OpenEMR\Modules\Copilot\Verification\ReferenceIndex;
-use OpenEMR\Modules\Copilot\Verification\VerifiedAnswer;
 use Psr\Clock\ClockInterface;
 
 final class TurnOrchestrator
@@ -202,11 +201,32 @@ final class TurnOrchestrator
 
         // (g) The model's output is untrusted draft prose until grounded
         // against the same reference index the payload's citation tokens
-        // were minted from.
-        $answer = $this->runStep(
+        // were minted from. The ground step is hand-rolled (like llm) so the
+        // verifier's verdict COUNTS ride on the trace (T19) — counts only,
+        // never claim content.
+        $groundStartedAt = $this->clock->now();
+        $groundStart = hrtime(true);
+        try {
+            $answer = $this->verifier->verify($response->claims, ReferenceIndex::fromChart($provided->chart));
+        } catch (\Throwable $e) {
+            $this->traceRecorder->record(
+                $context,
+                new StepRecord('ground', $groundStartedAt, $this->elapsedMs($groundStart), StepOutcome::Failed, $e::class),
+            );
+
+            throw $e;
+        }
+
+        $this->traceRecorder->record(
             $context,
-            'ground',
-            fn (): VerifiedAnswer => $this->verifier->verify($response->claims, ReferenceIndex::fromChart($provided->chart)),
+            new StepRecord(
+                'ground',
+                $groundStartedAt,
+                $this->elapsedMs($groundStart),
+                StepOutcome::Ok,
+                groundedCount: count($answer->grounded),
+                rejectedCount: count($answer->rejected),
+            ),
         );
 
         // (h)

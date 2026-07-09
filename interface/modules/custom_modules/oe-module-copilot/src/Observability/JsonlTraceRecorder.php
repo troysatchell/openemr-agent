@@ -48,6 +48,8 @@ final class JsonlTraceRecorder implements TraceRecorder
                 'input_tokens' => $tokenUsage?->inputTokens,
                 'output_tokens' => $tokenUsage?->outputTokens,
                 'cost_usd' => $tokenUsage?->costUsd,
+                'grounded_count' => $step->groundedCount,
+                'rejected_count' => $step->rejectedCount,
             ],
             JSON_THROW_ON_ERROR,
         );
