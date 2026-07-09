@@ -22,11 +22,34 @@ namespace OpenEMR\Modules\Copilot;
 
 use OpenEMR\Common\Database\QueryUtils;
 use OpenEMR\Common\Http\HttpRestRequest;
+use OpenEMR\Common\Uuid\UuidRegistry;
 use OpenEMR\Events\RestApiExtend\RestApiCreateEvent;
+use OpenEMR\Modules\Copilot\Audit\EventAuditDisclosureLogger;
+use OpenEMR\Modules\Copilot\Chart\ChartReader;
+use OpenEMR\Modules\Copilot\Chart\FhirChartMapper;
+use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirGateway;
+use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
+use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
+use OpenEMR\Modules\Copilot\Llm\AnthropicLlmClient;
+use OpenEMR\Modules\Copilot\Llm\ChartDataFlattener;
+use OpenEMR\Modules\Copilot\Llm\CopilotTask;
+use OpenEMR\Modules\Copilot\Llm\DraftPolicies;
+use OpenEMR\Modules\Copilot\Llm\LlmClient;
+use OpenEMR\Modules\Copilot\Llm\LlmTurnRequest;
+use OpenEMR\Modules\Copilot\Llm\LlmTurnResponse;
+use OpenEMR\Modules\Copilot\Llm\LlmUnavailableException;
+use OpenEMR\Modules\Copilot\Llm\MinimumNecessaryPayloadBuilder;
+use OpenEMR\Modules\Copilot\Observability\JsonlTraceRecorder;
 use OpenEMR\Modules\Copilot\Observability\ReadinessCheck;
+use OpenEMR\Modules\Copilot\Orchestration\ReadThroughChartSnapshotProvider;
+use OpenEMR\Modules\Copilot\Orchestration\TurnOrchestrator;
 use OpenEMR\Modules\Copilot\Routes\AclRequirement;
 use OpenEMR\Modules\Copilot\Routes\GuardedRouteRegistrar;
+use OpenEMR\Modules\Copilot\Routes\TurnEndpoint;
+use OpenEMR\Modules\Copilot\Synthesis\ChartSnapshotSynthesizer;
+use OpenEMR\Modules\Copilot\Verification\ClaimVerifier;
 use OpenEMR\RestControllers\Config\RestConfig;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 class Bootstrap
@@ -103,6 +126,111 @@ class Bootstrap
             }
         );
 
+        $registrar->register(
+            'POST /api/copilot/turn',
+            new AclRequirement('patients', 'med'),
+            static function (HttpRestRequest $request): array {
+                // Delegation, never a service account (S4/S6): the principal
+                // is the authenticated API user; a request without one is
+                // refused before any read.
+                $user = $request->getRequestUser();
+                $username = is_string($user['username'] ?? null) ? $user['username'] : '';
+                $userId = $request->getRequestUserId();
+                if (trim($username) === '' || $userId === null) {
+                    http_response_code(403);
+
+                    return ['error' => 'No authenticated user principal for this request.'];
+                }
+
+                try {
+                    $decoded = json_decode($request->getContent(), true, 16, JSON_THROW_ON_ERROR);
+                } catch (\JsonException) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be valid JSON.'];
+                }
+                if (!is_array($decoded)) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be a JSON object.'];
+                }
+
+                try {
+                    $endpoint = new TurnEndpoint(self::buildTurnOrchestrator());
+
+                    return $endpoint->handle(new PhysicianContext($username, $userId), $decoded);
+                } catch (\DomainException) {
+                    // Generic by design — never echo internals (R11).
+                    http_response_code(400);
+
+                    return ['error' => 'Invalid request: patient_uuid and question are required.'];
+                }
+            }
+        );
+
         $registrar->applyTo($event);
+    }
+
+    /**
+     * Composition root for the live turn path (T20). DB-backed and NOT
+     * covered by the isolated suite — verified at live-stack smoke (Wave 3).
+     *
+     * The uuid→pid resolver is the DB uuid registry's job (D7: pid is the
+     * trusted surrogate key; FHIR content is never the pid source). The LLM
+     * client reads ANTHROPIC_API_KEY from the environment — the one
+     * sanctioned key source (never the DB, never committed); when the key is
+     * absent every turn degrades honestly instead of failing (R11).
+     */
+    private static function buildTurnOrchestrator(): TurnOrchestrator
+    {
+        $pidResolver = static function (string $patientUuid): int {
+            $records = QueryUtils::fetchRecords(
+                'SELECT `pid` FROM `patient_data` WHERE `uuid` = ?',
+                [UuidRegistry::uuidToBytes($patientUuid)],
+            );
+            $pid = $records[0]['pid'] ?? null;
+            if (!is_int($pid) && !(is_string($pid) && ctype_digit($pid))) {
+                throw new \DomainException('Unknown patient uuid — no pid mapping in the uuid registry.');
+            }
+
+            return (int) $pid;
+        };
+
+        $apiKey = getenv('ANTHROPIC_API_KEY') ?: '';
+        $llm = trim($apiKey) !== ''
+            ? AnthropicLlmClient::forAnthropicApi($apiKey)
+            : new class implements LlmClient {
+                public function complete(LlmTurnRequest $request): LlmTurnResponse
+                {
+                    // No key configured: degrade honestly — findings intact,
+                    // answer absent — rather than failing the turn (R11).
+                    throw new LlmUnavailableException('No language-model API key is configured');
+                }
+            };
+
+        $clock = new class implements ClockInterface {
+            public function now(): \DateTimeImmutable
+            {
+                return new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+            }
+        };
+
+        return new TurnOrchestrator(
+            new ReadThroughChartSnapshotProvider(
+                new ChartReader(new OpenEmrFhirGateway()),
+                new FhirChartMapper(),
+                new ChartSnapshotSynthesizer(),
+                $pidResolver,
+            ),
+            CriticalSubsetDetectors::withDraftTables(),
+            new ChartDataFlattener(),
+            new MinimumNecessaryPayloadBuilder(DraftPolicies::v1()),
+            CopilotTask::FollowUpQa,
+            EventAuditDisclosureLogger::forEventAuditLogger(),
+            $llm,
+            new ClaimVerifier(),
+            $clock,
+            new JsonlTraceRecorder(self::defaultTracePath()),
+        );
     }
 }
