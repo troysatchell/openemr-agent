@@ -31,6 +31,44 @@ and patient UUID. State lives in `~/.copilot-demo/`, never in the repo;
 reruns are idempotent. `sh copilot-demo.sh token` refreshes the 1-hour
 token anytime.
 
+## Physician demo (in-EMR panel)
+
+The session-bound panel (T21) is a second UI on top of the same guarded
+service layer: no API base, no bearer token, no manual patient uuid — it
+authenticates as whichever OpenEMR user is logged into the EMR session and
+drives its own module page (`public/index.php`) via a same-origin AJAX
+endpoint (`public/ajax.php`), CSRF-protected like every other module page.
+
+1. **Seed the physician and today's schedule** (one-time; both steps PAUSE
+   for a manual step in the OpenEMR UI):
+   ```bash
+   cd interface/modules/custom_modules/oe-module-copilot/demo
+   DR_PASS='<pick a password>' sh copilot-demo.sh provider
+   sh copilot-demo.sh schedule
+   ```
+   `provider` pauses for you to create the demo physician (Administration →
+   Users → New User: username `dr.tran`, the password you set via
+   `$DR_PASS`, name Ellis Tran, Provider + Authorized checked), then resolves
+   the new user's numeric id via `GET /api/user` (falls back to asking you to
+   enter it by hand if it can't uniquely resolve). `schedule` seeds two more
+   synthetic patients (Rafael Mendoza, June Park) alongside the existing Alma
+   Reyes and books all three onto `dr.tran`'s calendar for today at 09:00,
+   09:30, and 10:15.
+2. **Log in to OpenEMR as `dr.tran`** (the password from `$DR_PASS`).
+3. Open the **Co-Pilot** tab (added to the main menu by this module).
+4. Confirm the **Today's patients** dropdown lists the three seeded
+   appointments; pick one — the glanceable snapshot (must-not-miss cards,
+   unevaluable items, current meds/allergies with citation chips) renders
+   above the ask box.
+5. Type a follow-up question in the ask box (e.g. *"Is the anticoagulation
+   current?"*) — the answer renders with the same grounded/rejected
+   citation styling as the token-based panel.
+
+The token-based `public/panel.html` path (bearer token + manual patient
+uuid) is unchanged and remains the API-consumer smoke path described above —
+useful for scripted checks and for demoing the raw API surface independent
+of an EMR login session.
+
 ## Suggested video flow (~3 minutes)
 
 1. **Panel** — paste token + patient UUID, ask *"Anything I should know
