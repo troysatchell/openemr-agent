@@ -11,6 +11,13 @@
  * made. Changing a field list here is a clinical-governance / privacy
  * decision, not an engineering one — escalate, don't edit.
  *
+ * SIGNED OFF (founder, 2026-07-09): the `ref` field on every data class.
+ * `ref` is the opaque `sourceType:sourceId` row pointer minted by
+ * ReferenceIndex — no PHI content, no patient identifier — and is what lets
+ * ClaimVerifier ground the model's claims against the live chart (R6/R10).
+ * That one addition is authorized; the rest of each list remains DRAFT as
+ * above. DraftPoliciesRefFieldTest pins the signed-off lists.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -34,10 +41,10 @@ final class DraftPolicies
     public static function v1(): array
     {
         $sharedFields = [
-            'medications' => ['name', 'status'],
-            'lab_results' => ['analyte', 'value', 'unit'],
-            'allergies' => ['substance', 'status'],
-            'follow_ups' => ['description', 'due'],
+            'medications' => ['name', 'status', 'ref'],
+            'lab_results' => ['analyte', 'value', 'unit', 'ref'],
+            'allergies' => ['substance', 'status', 'ref'],
+            'follow_ups' => ['description', 'due', 'ref'],
         ];
 
         // v1 DRAFT: the three tasks intentionally share one allowlist until
