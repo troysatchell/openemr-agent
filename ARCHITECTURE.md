@@ -40,7 +40,9 @@ surface what he could already see. Delegation (not *"runs inside his live
 session"*) keeps that true when he is **offline**; v1 scopes pre-charting to
 his live session and defers unattended overnight batch (§4). The **LLM sits
 outside the trust boundary**: every crossing is a logged, minimum-necessary
-disclosure under a signed BAA with zero data retention (**C5**).
+disclosure under a signed BAA with a HIPAA-ready organization (**C5**; see §4
+— on the first-party API, ZDR and HIPAA-ready are mutually exclusive, so
+"BAA + ZDR" is not a real package).
 
 **Risk posture (Decision 4).** Content can be wrong in **two directions**.
 **Provenance** on every surfaced claim defends what *is* shown — a wrong fact
@@ -106,7 +108,7 @@ flowchart TB
         DB[("MySQL")]
     end
 
-    LLM["External LLM API — OUTSIDE the trust boundary<br/>BAA + zero data retention · minimum-necessary fields only<br/>no credentials, no DB access"]
+    LLM["External LLM API — OUTSIDE the trust boundary<br/>BAA + HIPAA-ready org · minimum-necessary fields only<br/>no credentials, no DB access"]
 
     DOC -->|"question / next patient"| UI
     UI --> RT
@@ -143,9 +145,11 @@ keeping orchestration extractable.
 CrewAI) — those assume a standalone service, which Decision 1 rejects.
 Orchestration is custom, in-module PHP against the sanctioned seams
 (`openemr.bootstrap.php` → event subscriptions + routes via
-`RestApiCreateEvent`); the model is a Claude-class LLM procured under **BAA +
-zero data retention** (Anthropic direct or via a cloud BAA, e.g. Bedrock) —
-the gating requirement is *compliance-capable inference with tool use*, not a
+`RestApiCreateEvent`); the model is Claude on the **Anthropic first-party
+API** (endpoint decided 2026-07-09; a cloud BAA route, e.g. Bedrock, stays the
+deployment alternative) under §4's compliance posture — **BAA + HIPAA-ready
+organization + minimum-necessary + disclosure logging**, not "BAA + ZDR" (§4)
+— the gating requirement is *compliance-capable inference with tool use*, not a
 model family. Single agent, deliberately **not** multi-agent: the dangerous
 errors live *between* sources (D9), so per-source sub-agents would let
 interactions fall through the seam. Full option-by-option rationale:
@@ -163,9 +167,10 @@ interactions fall through the seam. Full option-by-option rationale:
 3. **Synthesis — one pass.** Reconcile meds, labs, and allergies together and check
    cross-source interactions in a single pass; no isolated per-source summaries
    (the interaction lives *between* them — `D9`).
-4. **LLM boundary.** Send only minimum-necessary fields → an endpoint under BAA +
-   zero data retention → log the disclosure (`EventAuditLogger`, new external-AI
-   category, `C1/C5`) → attach provenance to every returned claim.
+4. **LLM boundary.** Send only minimum-necessary fields → an endpoint under the
+   §4 compliance posture (BAA + HIPAA-ready organization) → log the disclosure
+   (`EventAuditLogger`, new external-AI category, `C1/C5`) → attach provenance
+   to every returned claim.
    **The compression/preservation seam (named explicitly):** minimum-necessary
    is a **COMPRESSION** rule — send less, never more; honest-uncertainty is a
    **PRESERVATION** rule — never let trimming manufacture false certainty. They
@@ -217,14 +222,22 @@ physician" literally true even when he is **offline**.
   `request_authorization_check`; OpenEMR has no default-deny gate (`S5`), so an
   omitted check is an open endpoint.
 - **LLM outside the trust boundary.** Treated as an untrusted processor: receives
-  only minimum-necessary data under BAA + zero retention, never gets credentials or
-  DB access, and its output is unverified until grounded against provenance.
-  **C5 status (recorded 2026-07-08): the BAA/ZDR is stipulated by the program,
-  not a real BAA** — the requirements direct us to use demo data only and to
-  act as if a signed BAA with zero-training terms exists with all LLM
+  only minimum-necessary data under the compliance posture below, never gets
+  credentials or DB access, and its output is unverified until grounded against
+  provenance.
+  **C5 status (recorded 2026-07-08): the compliance terms are stipulated by the
+  program, not a real BAA** — the requirements direct us to use demo data only
+  and to act as if a signed BAA with zero-training terms exists with all LLM
   providers. The disclosure-logging and minimum-necessary *mechanisms* are
   real, enforced, and graded; procuring an actual BAA is a real-world
   deployment prerequisite, not an in-project blocker.
+  **Correction (2026-07-09): "BAA + ZDR" is not a package on the Anthropic
+  first-party API** — zero-data-retention agreements and HIPAA-ready
+  organizations are mutually exclusive; HIPAA-ready orgs run standard
+  retention. The real-deployment phrasing is **BAA + HIPAA-ready organization
+  + minimum-necessary + disclosure logging**. This does not gate the project
+  (stipulated, above), but the doc must not claim a combination the vendor
+  does not offer.
 
 > **One-sentence defense.** Overnight pre-charting uses delegated authority, not
 > impersonation — the physician grants a read-only, revocable offline scope, so the
@@ -239,14 +252,14 @@ physician" literally true even when he is **offline**.
 
 | # | Risk | Root | Mitigation | Enforced in |
 |---|---|---|---|---|
-| R1 | Patient data to LLM without compliance | C5 | BAA + zero retention + minimum-necessary + disclosure logging | §3.4, §4 |
+| R1 | Patient data to LLM without compliance | C5 | BAA + HIPAA-ready org + minimum-necessary + disclosure logging | §3.4, §4 |
 | R2 | Patient-data conflation | D8 | identity resolution / dedup before synthesis | §3 |
 | R3 | Garbage-in, laundered into a clean summary | D0/D9/D10 | data-trust layer | §3 |
 | R4 | Missed cross-domain interaction (the seam) | D9 | single synthesis pass, no isolated summaries | §3 |
 | R5 | Automation bias → over-reliance (behavior) | USERS §8 | preserve-distrust UX; honest uncertainty; must-not-miss visually distinct; silence when nothing changed | UI |
-| R6 | Commission — a wrong fact in what IS shown | USERS §9 | provenance at point of use + factual-accuracy floor + human review | §3.4, §6 |
+| R6 | Commission — a wrong fact in what IS shown | USERS §9 | provenance at point of use + factual hard zero on the golden set (rate monitored in production) + human review | §3.4, §6 |
 | R13 | Omission — a must-not-miss item never surfaced (provenance/human review do NOT reach this) | USERS §8, §9 | accuracy gate + deterministic critical subset in code + production omission monitoring | §6 |
-| R7 | Over-flagging → alert-fatigue churn | USERS §9 | measured precision floor, same gate | §6 |
+| R7 | Over-flagging → alert-fatigue churn | USERS §9 | hard zero on false flags in the same gate; precision rate monitored | §6 |
 | R8 | Breach precursors | S1/S2/S3 | close error leak + cookie hardening before exposure | §7 (P1) |
 | R9 | Authorization omission | S5 | module default-deny; per-route checks | §4 |
 | R10 | Liability / FDA device line | persona/C5 | reviewable-basis: provenance + human decides, never autonomous | §3.4 |
@@ -280,23 +293,36 @@ just traceable after.
   the subset is a clinical-governance decision with a citation, not an
   engineering edit — "zero misses" is claimed for the subset as scoped,
   nothing more.
-- **Judgment-based items** (a subtle care gap, a trend) keep a **governed recall
-  floor**, set by the in-house clinical-governance owner (founder in v1; revisit
-  with a real clinician when available).
+- **Judgment-based items** (a subtle care gap, a trend) are the ONE place a
+  tunable precision/recall tradeoff exists, so rates live there and only there:
+  **provisional regression thresholds** — ratcheted "don't get worse" numbers
+  (measure current performance, set the threshold just below it, raise as it
+  improves), set by the in-house clinical-governance owner (founder in v1;
+  revisit with a real clinician when available). The judgment-recall threshold
+  is **named** (`judgmentRecallThreshold` — it guards omission, the thesis) but
+  UNSOURCED pending governance: reported, non-gating, and the whole track is
+  dormant until §3b items are adjudicated.
 
-| Metric | Guards | Bar |
+| Metric | Guards | Bar (two-track model, decided 2026-07-09) |
 |---|---|---|
-| Recall on must-not-miss | omission (R13) | **zero misses** on the critical subset; governed floor on judgment items |
-| Precision on flagged | alert fatigue (R7) | governed floor — he doesn't tune the panel out |
-| Factual accuracy on shown claims | commission (R6) | governed floor; each violation a candidate churn event |
+| Recall on must-not-miss | omission (R13) | **HARD ZERO** — any miss on the critical subset fails the build |
+| False flags on the critical subset | data trust + alert fatigue (R7) | **HARD ZERO** — a spurious flag on an adjudicated case is a data-trust bug, never a precision drag |
+| Precision on flagged | alert fatigue (R7) | rate **reported as a monitor**; gates only on the judgment track, as a provisional regression threshold |
+| Factual accuracy on shown claims | commission (R6) | **HARD ZERO on the golden set** — one incorrect stated fact fails the build; the *rate* is a production monitor only |
+| Judgment-item recall/precision | omission/churn on §3b items | **provisional regression thresholds** — ratcheted; recall threshold UNSOURCED pending governance; track dormant (nothing adjudicated) |
 
-- **The gate.** Any build change re-runs the **golden-chart set**; any miss on the
-  critical subset or any metric below floor **fails the build** — the red/green loop
-  applied to clinical output. **Status (2026-07-08): ARMED on the `PHASE0.md`
-  §3a reference-grounded set only**, signed off by the acting clinical-
-  governance owner (§9) as one decision with the detector tables (`PHASE0.md`
-  §3c). §3b judgment items stay provisional-unadjudicated and never gate;
-  UNSOURCED items (the sulfa grouping, DA-4) never gate.
+- **The gate.** Any build change re-runs the **golden-chart set**; any critical
+  miss, any false flag on an adjudicated case, or any incorrect stated fact
+  **fails the build** — hard zeros are invariants, never percentages — while
+  judgment rates gate only as provisional regression thresholds: the red/green
+  loop applied to clinical output. **Status (2026-07-08): ARMED on the
+  `PHASE0.md` §3a reference-grounded set only**, signed off by the acting
+  clinical-governance owner (§9) as one decision with the detector tables
+  (`PHASE0.md` §3c). §3b judgment items stay provisional-unadjudicated and
+  never gate; UNSOURCED items (the sulfa grouping, DA-4) never gate.
+  **Reworked 2026-07-09 (founder decision):** the old 0.8/0.95 "floors" were
+  unsourced numbers gating deterministic tracks; hard zeros need no source,
+  and the rates that remain are explicitly provisional and judgment-only.
 - **The golden-chart set** grows from curated cases (across the states and the
   complexity mix, `USERS §3/§7`, and the audit's interaction landmines, `D9`)
   plus **production near-misses**, so it ratchets: once missed, never silently
@@ -310,8 +336,9 @@ just traceable after.
   **golden-chart harness** is the correctness record. Per-request we log tool
   sequence, per-step latency, tool failures, and token counts, so "what did the
   agent do, how long did each step take, did a tool fail, what did it cost" is
-  answerable from logs; snapshot p95 latency and precision/recall floors are
-  the watched metrics (§6 table). A dedicated LLM-tracing product can be
+  answerable from logs; snapshot p95 latency, the monitor rates, and the
+  judgment provisional regression thresholds are the watched metrics (§6
+  table). A dedicated LLM-tracing product can be
   layered later; it is not load-bearing for v1
   (`docs/onboarding/PRE_SEARCH.md` §8).
 - **Limits.** The gate *bounds and monitors* omission; it does not eliminate it.
@@ -400,7 +427,11 @@ snapshot demo.
   accuracy gate on that set. §3b judgment items stay provisional and never
   gate. "Acting" is doing real work in that sentence: this is a founder
   standing in for a clinician, a named gap carried until a real internist
-  reviews the set (§6). Still open: the metric floors themselves.
+  reviews the set (§6). The metric *shape* was decided 2026-07-09 (hard zeros
+  on the deterministic tracks; ratcheted provisional regression thresholds on
+  the judgment track only — §6). Still open: the concrete judgment-rate
+  numbers, which must be ratcheted from measured performance once judgment
+  fixtures exist — surfaced to the founder, never invented.
 - **C5 BAA/ZDR is stipulated by the program, not procured** (recorded
   2026-07-08; see §4): demo data only, act-as-if a zero-training BAA exists.
   The real-world question — which compliance-capable inference endpoint and

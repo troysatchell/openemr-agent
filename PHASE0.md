@@ -583,9 +583,15 @@ Additional panic-lab findings:
 > that require clinical judgment, not deterministic rules. They are recorded as
 > candidates for a real clinician to adjudicate and are tagged
 > `provenance: provisional-unadjudicated`. Stated explicitly, per the task and
-> `ARCHITECTURE.md` §6 ("judgment-based items keep a *governed recall floor*,
-> set by the clinical-governance owner"): **no §3b item arms the accuracy gate;
-> a §3b miss is monitored, not a build failure.**
+> `ARCHITECTURE.md` §6 (two-track model, decided 2026-07-09: judgment items are
+> the only place tunable rates live — **provisional regression thresholds**,
+> ratcheted "don't get worse" numbers, with the recall threshold named but
+> UNSOURCED pending governance): **no §3b item arms the accuracy gate; the
+> judgment track is dormant until a clinician (or the acting owner)
+> adjudicates a set; a §3b miss is monitored, not a build failure.** The
+> deterministic §3a tracks gate on hard zeros (any miss, any false flag, any
+> incorrect stated fact) — invariants, never percentages, so no unsourced
+> "floor" number gates them.
 
 Candidate judgment-based items (illustrative, all UNADJUDICATED):
 - **Trend, not a single value:** a rising creatinine trending toward CKD that is
