@@ -196,16 +196,15 @@ class Bootstrap
     }
 
     /**
-     * Composition root for the live turn path (T20). DB-backed and NOT
-     * covered by the isolated suite — verified at live-stack smoke (Wave 3).
+     * Composition root for the read-through chart snapshot provider shared
+     * by the live turn path (T20) and the session panel's snapshot endpoint
+     * (T21). DB-backed and NOT covered by the isolated suite — verified at
+     * live-stack smoke (Wave 3).
      *
      * The uuid→pid resolver is the DB uuid registry's job (D7: pid is the
-     * trusted surrogate key; FHIR content is never the pid source). The LLM
-     * client reads ANTHROPIC_API_KEY from the environment — the one
-     * sanctioned key source (never the DB, never committed); when the key is
-     * absent every turn degrades honestly instead of failing (R11).
+     * trusted surrogate key; FHIR content is never the pid source).
      */
-    private static function buildTurnOrchestrator(): TurnOrchestrator
+    public static function buildChartSnapshotProvider(): ReadThroughChartSnapshotProvider
     {
         $pidResolver = static function (string $patientUuid): int {
             $records = QueryUtils::fetchRecords(
@@ -220,6 +219,24 @@ class Bootstrap
             return (int) $pid;
         };
 
+        return new ReadThroughChartSnapshotProvider(
+            new ChartReader(new OpenEmrFhirGateway()),
+            new FhirChartMapper(),
+            new ChartSnapshotSynthesizer(),
+            $pidResolver,
+        );
+    }
+
+    /**
+     * Composition root for the live turn path (T20). DB-backed and NOT
+     * covered by the isolated suite — verified at live-stack smoke (Wave 3).
+     *
+     * The LLM client reads ANTHROPIC_API_KEY from the environment — the one
+     * sanctioned key source (never the DB, never committed); when the key is
+     * absent every turn degrades honestly instead of failing (R11).
+     */
+    public static function buildTurnOrchestrator(): TurnOrchestrator
+    {
         $apiKey = getenv('ANTHROPIC_API_KEY') ?: '';
         $llm = trim($apiKey) !== ''
             ? AnthropicLlmClient::forAnthropicApi($apiKey)
@@ -240,12 +257,7 @@ class Bootstrap
         };
 
         return new TurnOrchestrator(
-            new ReadThroughChartSnapshotProvider(
-                new ChartReader(new OpenEmrFhirGateway()),
-                new FhirChartMapper(),
-                new ChartSnapshotSynthesizer(),
-                $pidResolver,
-            ),
+            self::buildChartSnapshotProvider(),
             CriticalSubsetDetectors::withDraftTables(),
             new ChartDataFlattener(),
             new MinimumNecessaryPayloadBuilder(DraftPolicies::v1()),
