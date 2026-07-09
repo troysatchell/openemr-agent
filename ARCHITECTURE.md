@@ -166,6 +166,16 @@ interactions fall through the seam. Full option-by-option rationale:
 4. **LLM boundary.** Send only minimum-necessary fields → an endpoint under BAA +
    zero data retention → log the disclosure (`EventAuditLogger`, new external-AI
    category, `C1/C5`) → attach provenance to every returned claim.
+   **The compression/preservation seam (named explicitly):** minimum-necessary
+   is a **COMPRESSION** rule — send less, never more; honest-uncertainty is a
+   **PRESERVATION** rule — never let trimming manufacture false certainty. They
+   pull in opposite directions, and the seam bites hardest at absence: a chart
+   *assessed with nothing recorded* (known-absent, e.g. NKDA) and a chart
+   *never assessed* (unknown) both serialize to "no entries" unless the
+   distinction is carried deliberately. Trimming must never destroy it (`D1`) —
+   the payload carries a per-data-class absence marker through one canonical
+   `CurrencyWire` mapper (known-absent vs the one Unknown token, used for all
+   data classes, never inferable as false), disclosed like any other crossing.
 5. **Conversation context.** Multi-turn context is an in-memory convenience for the encounter only — not persisted beyond the encounter, no new patient-data store (consistent with Decision 1), so it adds no PHI-at-rest. The real constraint is correctness, not storage: **every turn re-grounds against the live chart and provenance**, so being multi-turn can't (a) answer from stale context when the record has changed mid-conversation, or (b) treat the model's own earlier output as a source. Prior turns inform phrasing and intent, never facts.
 6. **Writes:** none in v1.
 
@@ -209,6 +219,12 @@ physician" literally true even when he is **offline**.
 - **LLM outside the trust boundary.** Treated as an untrusted processor: receives
   only minimum-necessary data under BAA + zero retention, never gets credentials or
   DB access, and its output is unverified until grounded against provenance.
+  **C5 status (recorded 2026-07-08): the BAA/ZDR is stipulated by the program,
+  not a real BAA** — the requirements direct us to use demo data only and to
+  act as if a signed BAA with zero-training terms exists with all LLM
+  providers. The disclosure-logging and minimum-necessary *mechanisms* are
+  real, enforced, and graded; procuring an actual BAA is a real-world
+  deployment prerequisite, not an in-project blocker.
 
 > **One-sentence defense.** Overnight pre-charting uses delegated authority, not
 > impersonation — the physician grants a read-only, revocable offline scope, so the
@@ -253,6 +269,17 @@ just traceable after.
   follow-ups — are detected by **rules in the data-trust/synthesis layer**; the
   model only writes the surrounding prose. Target: **zero misses.** This is the key
   move — the worst omissions leave the model entirely.
+- **The critical subset is DELIBERATELY NARROW — selection, not omission.**
+  `PHASE0.md` §3a.5 names the coverage gap explicitly: the panic-lab table
+  tracks 5 analytes where ARUP lists ~13 adult criticals (INR, calcium,
+  magnesium, hs-troponin, digoxin, and lithium are absent — PL-10–15); the
+  DDI table encodes 3 single-ingredient pairs, so the class-vs-member gap
+  means `warfarin–ibuprofen` does not reach naproxen or ketorolac, and
+  high-harm published pairs (statin+CYP3A4, QT+QT, SSRI+MAOI) are absent;
+  the sulfonamide allergy grouping is UNSOURCED and never gates. Widening
+  the subset is a clinical-governance decision with a citation, not an
+  engineering edit — "zero misses" is claimed for the subset as scoped,
+  nothing more.
 - **Judgment-based items** (a subtle care gap, a trend) keep a **governed recall
   floor**, set by the in-house clinical-governance owner (founder in v1; revisit
   with a real clinician when available).
@@ -265,7 +292,11 @@ just traceable after.
 
 - **The gate.** Any build change re-runs the **golden-chart set**; any miss on the
   critical subset or any metric below floor **fails the build** — the red/green loop
-  applied to clinical output.
+  applied to clinical output. **Status (2026-07-08): ARMED on the `PHASE0.md`
+  §3a reference-grounded set only**, signed off by the acting clinical-
+  governance owner (§9) as one decision with the detector tables (`PHASE0.md`
+  §3c). §3b judgment items stay provisional-unadjudicated and never gate;
+  UNSOURCED items (the sulfa grouping, DA-4) never gate.
 - **The golden-chart set** grows from curated cases (across the states and the
   complexity mix, `USERS §3/§7`, and the audit's interaction landmines, `D9`)
   plus **production near-misses**, so it ratchets: once missed, never silently
@@ -291,20 +322,30 @@ just traceable after.
 
 ## 7. Roadmap
 
-Foundations first; each phase gates the next.
+Foundations first. Phases 1–2 are audit-driven remediation and proceed on the
+audit's own evidence; Phase 0 gates what depends on the *user being real* —
+Phase 3 and the arming of the accuracy gate — and Phases 3–5 gate sequentially.
 
-- **Phase 0 — Validate the user** *(gates all; run in-house — decided
-  2026-07-07).* No external design-partner internist: we create the
-  design-partner function ourselves — a structured, founder-run pass over the
-  90-second moment, the four needs, and the state mix (`USERS §3`) using the
-  `USERS.md` "→ Test by" prompts as the protocol. The no-clinician limitation
-  stays named; real-clinician review is a post-MVP upgrade, not a blocker.
+- **Phase 0 — Validate the user** *(gates Phase 3 and the arming of the
+  accuracy gate — NOT the audit-remediation Phases 1–2, which are
+  audit-driven and already green; run in-house — decided 2026-07-07;
+  delivered as `PHASE0.md`).* No external design-partner internist: we create
+  the design-partner function ourselves — a structured, founder-run pass over
+  the 90-second moment, the four needs, and the state mix (`USERS §3`) using
+  the `USERS.md` "→ Test by" prompts as the protocol. H1/H2/H10 turned out to
+  be **program-stipulated** (the case study hands us the 90-second moment,
+  the multi-turn agent shape, and answer-in-seconds), so Phase 0 no longer
+  gates anything in-project; its residual — real-clinician validation of the
+  persona and labels (R12) — stays open for the real world. The no-clinician
+  limitation stays named; real-clinician review is a post-MVP upgrade, not a
+  blocker.
 - **Phase 1 — Compliance & security.** BAA + zero retention; minimum-necessary
   policy; disclosure logging (`C1/C5`); close `S1/S2/S3`; module skeleton + FHIR
   read path.
 - **Phase 2 — Data-trust substrate.** Identity/dedup, filtering, normalization,
-  one-pass synthesis; the deterministic critical-subset rules (§6.3 items); the
-  initial golden-chart set, labels seeded by the in-house Phase 0 adjudication.
+  one-pass synthesis; the deterministic critical-subset rules (the §6
+  critical-subset items); the initial golden-chart set, labels seeded by the
+  in-house Phase 0 adjudication.
 - **Phase 3 — Orientation MVP** *(read-only, established patients first; gated on
   the accuracy gate passing).* **Session-bound** pre-chart — kicked from his live
   evening session or an at-login warm-up (§4) — + glanceable snapshot; provenance on
@@ -351,8 +392,19 @@ snapshot demo.
   reviews the persona and the golden-chart labels* — both carry the
   founder-adjudication limitation until then.
 - **Buyer named — the hospital CTO** (the case study's own standard: *defend it in front of a hospital CTO deciding whether to put it in front of their physicians*). **Still open:** the CTO's success metrics (throughput, liability, compliance, quality scores) vs. the physician-user's (eye-contact, pajama-time) are partly in tension — which we're held to shapes the definition of success. (`USERS §10`)
-- Who owns clinical governance of the critical-subset definition and the metric
-  floors? *(Founder by default in v1 — a named gap, not an answer.)* (§6)
+- ~~Who owns clinical governance of the critical-subset definition and the
+  metric floors?~~ **Decided 2026-07-08: the founder is the acting
+  clinical-governance owner.** He signed off the `PHASE0.md` §3a
+  reference-grounded labels ONLY — one decision covering both the detector
+  draft tables and the gating labels (`PHASE0.md` §3c) — which armed the
+  accuracy gate on that set. §3b judgment items stay provisional and never
+  gate. "Acting" is doing real work in that sentence: this is a founder
+  standing in for a clinician, a named gap carried until a real internist
+  reviews the set (§6). Still open: the metric floors themselves.
+- **C5 BAA/ZDR is stipulated by the program, not procured** (recorded
+  2026-07-08; see §4): demo data only, act-as-if a zero-training BAA exists.
+  The real-world question — which compliance-capable inference endpoint and
+  actual BAA — stays open for deployment.
 - What latency does the between-patient moment tolerate? *(95th-percentile target,
   set during in-house Phase 0; revisit with a real clinician.)*
 - De-identification: any task where we can avoid sending identified data at all?

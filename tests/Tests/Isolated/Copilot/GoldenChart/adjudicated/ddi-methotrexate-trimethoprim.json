@@ -1,0 +1,10 @@
+{
+    "id": "ddi-methotrexate-trimethoprim",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["ddi-methotrexate-trimethoprim"],
+        "key_facts": []
+    },
+    "_provenance": "FDA methotrexate Prescribing Information, Drug Interactions; corroborated by MedSafe NZ Prescriber Update, March 2022 (PHASE0.md §3a.2 DD-3): additive antifolate effect, bone-marrow suppression. Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label.",
+    "_scenario": "Current medications include Methotrexate 2.5mg Tablet and Trimethoprim 100mg; the pair must be surfaced."
+}

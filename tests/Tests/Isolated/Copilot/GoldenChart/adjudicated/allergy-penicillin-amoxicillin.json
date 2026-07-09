@@ -1,0 +1,10 @@
+{
+    "id": "allergy-penicillin-amoxicillin",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["allergy-penicillin-amoxicillin"],
+        "key_facts": []
+    },
+    "_provenance": "Amoxicillin capsule label, NorthStar Rx LLC, rev. 02/2024, Contraindications §4 (PHASE0.md §3a.3 DA-1): contraindicated on serious hypersensitivity to amoxicillin or other beta-lactams. Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label.",
+    "_scenario": "Documented current penicillin allergy plus a current Amoxicillin 500mg Capsule order; the conflict must be surfaced."
+}

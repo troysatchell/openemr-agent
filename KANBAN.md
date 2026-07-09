@@ -30,8 +30,8 @@ Phase 3 read-only snapshot demo.
 - [x] Activity/deleted filters (D10) — green `a644256`; three-state currency, Unknown surfaced
 - [x] Normalizers: empty-string (D1), booleans (D4), dates (D0/D6) — green `27a6fc6`
 - [x] One-pass synthesis (D9) — done `001eaa0` (9/9); provenance SourceRefs on every item
-- [x] Deterministic critical-subset detectors — done `faeb658` (35/35; unknown → unevaluable, never silent). **Review:** PanicThresholds/InteractionPairs/AllergyClassMap `draftV1()` clinical tables are DRAFT pending human sign-off
-- [x] Golden-chart harness + CI accuracy gate — done `b74cddf` (21/21 + `clinical-accuracy-gate.yml`, auto-required via all-checks-passed). Gate reports **NOT ARMED** until Phase 0 delivers adjudicated labels; synthetic fixtures never arm or fail it
+- [x] Deterministic critical-subset detectors — done `faeb658` (35/35; unknown → unevaluable, never silent). **Review 2026-07-08:** `draftV1()` tables re-based on cited references (ARUP Rev.46, drug labels — PHASE0.md §3a) and signed off by the acting clinical-governance owner as ONE decision with the §3a labels (PHASE0.md §3c). The sulfonamides grouping stays UNSOURCED (DA-4) — not signed off, never gated
+- [x] Golden-chart harness + CI accuracy gate — done `b74cddf` (21/21 + `clinical-accuracy-gate.yml`, auto-required via all-checks-passed). **Gate is ARMED (2026-07-08)** on the §3a reference-grounded adjudicated set (`GoldenChart/adjudicated/`, `CriticalSubsetGateTest`); §3b judgment items stay PROVISIONAL and never gate; synthetic fixtures never arm or fail it
 
 **Run notes (2026-07-08):** frozen-test TDD loop — orchestrator authored+froze all tests (one freeze commit per ticket branch), agents/orchestrator implemented to green; history structured as per-ticket feature branches merged --no-ff. Full isolated suite: 3694 tests, 0 failures, 0 regressions. PHPStan full-codebase run environmentally blocked locally (container OOM) — php -l + phpcs clean; PHPStan rides CI. One frozen-test transcription bug (ChartReaderTest spy plumbing) found by an engineer agent, fixed + documented in `fd71c60`.
 
@@ -39,12 +39,12 @@ Phase 3 read-only snapshot demo.
 
 ## Up Next
 
-### Phase 0 — Validate the user *(gates all phases)*
-Founder-run, in-house (decided 2026-07-07); no external clinician — limitation stays named.
-- [ ] Structured pass over the 90-second moment, the four needs, and the state mix (`USERS.md` §3) using the "→ Test by" prompts as the protocol
-- [ ] Set the p95 latency tolerance target for the between-patient moment
-- [ ] Produce adjudicated seed labels for the golden-chart set (feeds Phase 2)
-- [ ] Write down residual risk R12 (persona unvalidated by a real clinician) in the output
+### Phase 0 — Validate the user *(gates Phase 3 and the arming of the accuracy gate — not the audit-driven Phases 1–2)*
+Founder-run, in-house (decided 2026-07-07); no external clinician — limitation stays named. H1/H2/H10 are program-stipulated (case-study PDF), so Phase 0 no longer gates anything in-project; R12 stays open for the real world.
+- [x] Structured pass over the 90-second moment, the four needs, and the state mix (`USERS.md` §3) using the "→ Test by" prompts as the protocol — `PHASE0.md` §1
+- [x] Set the p95 latency tolerance target for the between-patient moment — `PHASE0.md` §2 (STIPULATED, not validated)
+- [x] Produce adjudicated seed labels for the golden-chart set — `PHASE0.md` §3a candidates signed off 2026-07-08 by the acting clinical-governance owner; fixtures in `GoldenChart/adjudicated/`
+- [x] Write down residual risk R12 (persona unvalidated by a real clinician) in the output — `PHASE0.md` §4 (stays OPEN)
 
 ---
 
