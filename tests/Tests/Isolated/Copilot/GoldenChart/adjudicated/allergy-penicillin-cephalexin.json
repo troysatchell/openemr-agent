@@ -1,0 +1,10 @@
+{
+    "id": "allergy-penicillin-cephalexin",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["allergy-penicillin-cephalexin"],
+        "key_facts": []
+    },
+    "_provenance": "Cephalexin capsule label, Lupin Pharmaceuticals, rev. 09/2024 (PHASE0.md §3a.3 DA-2): cross-hypersensitivity among beta-lactams in up to 10% of patients with a penicillin allergy; Amoxicillin label (NorthStar Rx, rev. 02/2024) §4 names cephalosporins among cross-reactive beta-lactams. Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label.",
+    "_scenario": "Documented current penicillin allergy plus a current Cephalexin 500mg order; the beta-lactam cross-link must surface the conflict."
+}

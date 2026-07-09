@@ -1,0 +1,10 @@
+{
+    "id": "ddi-warfarin-ibuprofen",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["ddi-warfarin-ibuprofen"],
+        "key_facts": []
+    },
+    "_provenance": "Carpenter, Berry & Pelletier, Clinically Relevant Drug-Drug Interactions in Primary Care, Am Fam Physician 2019;99(9):558-564 (PHASE0.md §3a.2). Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label. DD-1: warfarin + NSAID gastrointestinal bleeding risk.",
+    "_scenario": "Current medications include Warfarin 5mg Tablet and Ibuprofen 400mg; the pair must be surfaced."
+}

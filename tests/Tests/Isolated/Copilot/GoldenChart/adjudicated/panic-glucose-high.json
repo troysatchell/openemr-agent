@@ -1,0 +1,10 @@
+{
+    "id": "panic-glucose-high",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["panic-glucose-high"],
+        "key_facts": []
+    },
+    "_provenance": "ARUP Laboratories Critical Values List, CORP-APPEND-0104A, Rev. 46, April 2026, p.1 (PHASE0.md §3a.1). Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label. Glucose (adult) >450 mg/dL.",
+    "_scenario": "Chart carries glucose 480 mg/dL; must be surfaced as a panic lab."
+}

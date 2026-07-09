@@ -4,11 +4,13 @@
  * Deterministic panic-lab detector (T10; R13, UC4; ARCHITECTURE.md §6).
  *
  * Panic labs are a code guarantee, never model judgment. Each lab whose
- * analyte is tracked by the threshold table is either evaluated (strictly
- * outside a bound => finding; the bound itself is not panic) or surfaced
- * as unevaluable when the value is missing or the unit is absent/mismatched
- * (AUDIT D0/D1/D6) — never silently skipped. Untracked analytes are out of
- * this detector's contract. Pure: no I/O, no clock, no globals.
+ * analyte is tracked by the threshold table is either evaluated (outside a
+ * bound => finding; whether the bound value itself is panic is the entry's
+ * own lowInclusive/highInclusive property, default strictly-outside) or
+ * surfaced as unevaluable when the value is missing or the unit is
+ * absent/mismatched (AUDIT D0/D1/D6) — never silently skipped. Untracked
+ * analytes are out of this detector's contract. Pure: no I/O, no clock,
+ * no globals.
  *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
@@ -75,14 +77,17 @@ final class PanicLabDetector
             }
 
             $low = $threshold['low'];
-            if ($low !== null && $lab->value < $low) {
+            $lowFires = $low !== null
+                && ($threshold['lowInclusive'] ? $lab->value <= $low : $lab->value < $low);
+            if ($lowFires) {
                 $findings[] = new CriticalFinding(
                     CriticalFindingType::PanicLab,
                     sprintf(
-                        'Panic lab: %s %s %s is below the low panic bound of %s %s',
+                        'Panic lab: %s %s %s is %s the low panic bound of %s %s',
                         $lab->analyte,
                         $lab->value,
                         $lab->unit,
+                        $threshold['lowInclusive'] ? 'at or below' : 'below',
                         $low,
                         $threshold['unit'],
                     ),
@@ -92,14 +97,17 @@ final class PanicLabDetector
             }
 
             $high = $threshold['high'];
-            if ($high !== null && $lab->value > $high) {
+            $highFires = $high !== null
+                && ($threshold['highInclusive'] ? $lab->value >= $high : $lab->value > $high);
+            if ($highFires) {
                 $findings[] = new CriticalFinding(
                     CriticalFindingType::PanicLab,
                     sprintf(
-                        'Panic lab: %s %s %s is above the high panic bound of %s %s',
+                        'Panic lab: %s %s %s is %s the high panic bound of %s %s',
                         $lab->analyte,
                         $lab->value,
                         $lab->unit,
+                        $threshold['highInclusive'] ? 'at or above' : 'above',
                         $high,
                         $threshold['unit'],
                     ),

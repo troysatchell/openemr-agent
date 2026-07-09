@@ -13,6 +13,18 @@
  * nothing survives the allowlist is a \DomainException: a refusal, not an
  * empty disclosure.
  *
+ * Absence markers (AUDIT D1; ARCHITECTURE §3): every allowlisted data class
+ * WITHOUT disclosed entries is marked in a separate 'chart_assessment'
+ * payload channel via the one canonical CurrencyWire mapper — a class key
+ * present with zero entries crosses as known-absent ('none-recorded', e.g.
+ * NKDA); a class key absent (or whose entries could not cross) crosses as
+ * the canonical Unknown token. Minimum-necessary is a COMPRESSION rule;
+ * honest-uncertainty is a PRESERVATION rule — trimming never destroys the
+ * known-absent vs never-assessed distinction. The marker channel carries no
+ * PHI, is policy-scoped, and is disclosed like any other crossing (C1).
+ * Known-absent is knowledge, so it can carry a send alone; a wholly
+ * unknown chart stays a refusal.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -28,6 +40,9 @@ use OpenEMR\Modules\Copilot\Audit\Disclosure;
 
 final class MinimumNecessaryPayloadBuilder
 {
+    /** Reserved payload channel for per-data-class absence markers (D1). */
+    public const ASSESSMENT_CLASS = 'chart_assessment';
+
     /** @var array<string, FieldAllowlist> */
     private readonly array $policies;
 
@@ -48,6 +63,15 @@ final class MinimumNecessaryPayloadBuilder
                     sprintf('Policy for task "%s" must be a FieldAllowlist (C5)', $taskValue)
                 );
             }
+            if (array_key_exists(self::ASSESSMENT_CLASS, $allowlist->fieldsByDataClass())) {
+                throw new \DomainException(
+                    sprintf(
+                        'Policy for task "%s" claims the reserved "%s" channel — absence markers are builder-owned, never chart data (D1)',
+                        $taskValue,
+                        self::ASSESSMENT_CLASS,
+                    )
+                );
+            }
             $parsed[$taskValue] = $allowlist;
         }
 
@@ -63,6 +87,7 @@ final class MinimumNecessaryPayloadBuilder
         string $userId,
         int $patientPid,
         \DateTimeImmutable $when,
+        ?string $correlationId = null,
     ): DisclosedPayload {
         $policy = $this->policies[$task->value] ?? null;
         if ($policy === null) {
@@ -72,14 +97,19 @@ final class MinimumNecessaryPayloadBuilder
         }
 
         $payload = [];
+        $assessment = [];
         foreach ($policy->fieldsByDataClass() as $dataClass => $allowedFields) {
             if (!array_key_exists($dataClass, $chartData)) {
+                // Key absent = the chart was never assessed for this class.
+                $assessment[$dataClass] = CurrencyWire::UNKNOWN;
                 continue;
             }
 
             $entries = $chartData[$dataClass];
             if (!is_array($entries)) {
-                // Malformed data class container: drop it (fail closed).
+                // Malformed data class container: drop it (fail closed) —
+                // undisclosable, so unknown at the boundary, never known-absent.
+                $assessment[$dataClass] = CurrencyWire::UNKNOWN;
                 continue;
             }
 
@@ -104,18 +134,33 @@ final class MinimumNecessaryPayloadBuilder
 
             if ($survivors !== []) {
                 $payload[$dataClass] = $survivors;
+                continue;
             }
+
+            // Key present with zero entries = assessed-and-empty (known-absent,
+            // e.g. NKDA). Entries that existed but could not cross are unknown
+            // at the boundary — claiming known-absent would launder them (D1).
+            $assessment[$dataClass] = $entries === []
+                ? CurrencyWire::KNOWN_ABSENT
+                : CurrencyWire::UNKNOWN;
         }
 
-        if ($payload === []) {
+        // Known-absent is knowledge and can carry a send alone; a chart that
+        // is wholly unknown to this task still has nothing to disclose.
+        $hasKnownAbsent = in_array(CurrencyWire::KNOWN_ABSENT, $assessment, true);
+        if ($payload === [] && !$hasKnownAbsent) {
             throw new \DomainException(
                 sprintf('Nothing in the chart data survives the "%s" allowlist — a send with no grounded payload is a refusal, not an empty disclosure (C5)', $task->value)
             );
         }
 
+        if ($assessment !== []) {
+            $payload[self::ASSESSMENT_CLASS] = $assessment;
+        }
+
         return new DisclosedPayload(
             $payload,
-            new Disclosure($userId, $patientPid, array_keys($payload), $task->value, $when),
+            new Disclosure($userId, $patientPid, array_keys($payload), $task->value, $when, $correlationId),
         );
     }
 }

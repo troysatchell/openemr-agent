@@ -1,0 +1,10 @@
+{
+    "id": "panic-hemoglobin-low",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["panic-hemoglobin-low"],
+        "key_facts": []
+    },
+    "_provenance": "ARUP Laboratories Critical Values List, CORP-APPEND-0104A, Rev. 46, April 2026, p.1 (PHASE0.md §3a.1). Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label. Hemoglobin (adult) <7.0 g/dL.",
+    "_scenario": "Chart carries hemoglobin 6.8 g/dL; must be surfaced as a panic lab."
+}

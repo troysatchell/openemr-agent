@@ -84,11 +84,35 @@ final readonly class AllergyClassMap
      *
      * Only unambiguous classics; do not extend or tune this map without
      * human clinical review.
+     *
+     * The beta-lactams umbrella carries the penicillin↔cephalosporin
+     * cross-link: the one-level expand() traverses it, so a documented
+     * penicillin allergy reaches a cephalexin order and vice-versa.
+     * Cited (PHASE0.md §3a.3 DA-2/DA-3): Cephalexin capsule label, Lupin
+     * Pharmaceuticals, rev. 09/2024 — "Cross-hypersensitivity among
+     * beta-lactam antibacterial drugs may occur in up to 10% of patients
+     * with a history of penicillin allergy"; Amoxicillin capsule label,
+     * NorthStar Rx LLC, rev. 02/2024, Contraindications §4 — contraindicated
+     * on serious hypersensitivity to other beta-lactams incl. cephalosporins.
+     *
+     * The sulfonamides grouping is UNSOURCED (PHASE0.md §3a.3 DA-4) — left
+     * exactly as shipped, never gated on, pending a cited reference and
+     * adjudication.
      */
     public static function draftV1(): self
     {
         return new self([
             'penicillins' => ['penicillin', 'amoxicillin', 'ampicillin'],
+            'cephalosporins' => ['cephalexin', 'cefazolin', 'ceftriaxone', 'cefdinir'],
+            'beta-lactams' => [
+                'penicillin',
+                'amoxicillin',
+                'ampicillin',
+                'cephalexin',
+                'cefazolin',
+                'ceftriaxone',
+                'cefdinir',
+            ],
             'sulfonamides' => ['sulfamethoxazole', 'sulfasalazine'],
         ]);
     }

@@ -1,0 +1,10 @@
+{
+    "id": "panic-platelets-high",
+    "adjudicated": true,
+    "labels": {
+        "must_not_miss": ["panic-platelets-high"],
+        "key_facts": []
+    },
+    "_provenance": "ARUP Laboratories Critical Values List, CORP-APPEND-0104A, Rev. 46, April 2026, p.1 (PHASE0.md §3a.1). Signed off by the acting clinical-governance owner 2026-07-08; §3a reference-grounded label. Platelets ≥1000 x10(3)/uL (inclusive).",
+    "_scenario": "Chart carries platelets exactly 1000 x10(3)/uL; the inclusive high bound must fire."
+}
