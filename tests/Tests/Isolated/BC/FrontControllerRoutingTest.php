@@ -39,11 +39,18 @@ class FrontControllerRoutingTest extends TestCase
         $host = '127.0.0.1';
         $port = 8765;
 
-        self::$process = new Process([
-            'php',
-            '-S', sprintf('%s:%d', $host, $port),
-            $router,
-        ]);
+        // S9 (AUDIT.md): the /_routing_test affordance is now gated to a dev
+        // environment (OPENEMR__ENVIRONMENT=dev). This routing validation runs
+        // the built-in server in dev so the 418 entry-point checks still hold;
+        // in production the hook is silent (covered by RoutingTestGateTest).
+        self::$process = new Process(
+            [
+                'php',
+                '-S', sprintf('%s:%d', $host, $port),
+                $router,
+            ],
+            env: ['OPENEMR__ENVIRONMENT' => 'dev'],
+        );
         self::$process->start();
 
         // Give the server time to start
