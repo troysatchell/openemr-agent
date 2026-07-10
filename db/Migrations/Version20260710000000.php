@@ -33,7 +33,9 @@ final class Version20260710000000 extends AbstractMigration
     public function up(Schema $schema): void
     {
         // Seed the durable timing-defense dummy hash only if it is missing.
-        $dummyHash = (new AuthHash())->passwordHash('dummy');
+        // passwordHash() takes its argument by reference, so use a variable.
+        $dummyPassword = 'dummy';
+        $dummyHash = (new AuthHash())->passwordHash($dummyPassword);
         $this->addSql(
             "INSERT INTO `globals` (`gl_name`, `gl_index`, `gl_value`) "
             . "SELECT 'hidden_auth_dummy_hash', 0, ? FROM DUAL "

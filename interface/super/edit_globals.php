@@ -32,6 +32,7 @@ use OpenEMR\Common\Acl\AccessDeniedHelper;
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Auth\AuthHash;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Database\QueryUtils;
 use OpenEMR\Common\Logging\AuditSettingsChangeDetector;
 use OpenEMR\Common\Logging\EventAuditLogger;
 use OpenEMR\Common\Session\SessionWrapperFactory;
@@ -325,9 +326,13 @@ function checkBackgroundServices(): void
         $auditControlsOld = [];
         $auditControlsNew = [];
         foreach (AuditSettingsChangeDetector::CONTROL_KEYS as $auditControlKey) {
-            $auditControlsOld[$auditControlKey] = (string) ($old_globals[$auditControlKey]['gl_value'] ?? '');
-            $auditControlRow = sqlQuery("SELECT `gl_value` FROM `globals` WHERE `gl_name` = ?", [$auditControlKey]);
-            $auditControlsNew[$auditControlKey] = (string) ($auditControlRow['gl_value'] ?? '');
+            $oldRow = $old_globals[$auditControlKey] ?? null;
+            $oldValue = is_array($oldRow) ? ($oldRow['gl_value'] ?? null) : null;
+            $auditControlsOld[$auditControlKey] = is_scalar($oldValue) ? (string) $oldValue : '';
+
+            $newRow = QueryUtils::querySingleRow("SELECT `gl_value` FROM `globals` WHERE `gl_name` = ?", [$auditControlKey]);
+            $newValue = is_array($newRow) ? ($newRow['gl_value'] ?? null) : null;
+            $auditControlsNew[$auditControlKey] = is_scalar($newValue) ? (string) $newValue : '';
         }
         foreach (AuditSettingsChangeDetector::changedControls($auditControlsOld, $auditControlsNew) as $auditControlChange) {
             EventAuditLogger::getInstance()->auditSQLAuditTamper($auditControlChange['key'], $auditControlChange['new']);
