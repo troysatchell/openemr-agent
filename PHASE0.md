@@ -641,8 +641,7 @@ that needs a clinician, not a founder or a model, to adjudicate.
 > **ARMED on that set** (§4). **§3b stays PROVISIONAL — UNADJUDICATED and
 > never gates**; DA-4 (sulfa) stays UNSOURCED and ungated; the PL-10–15 and
 > DD-4–8 candidate *additions* remain unadjudicated candidates — the
-> coverage gap stays named (`ARCHITECTURE.md` §6). The roster collapse above
-> is applied in `KANBAN.md`.
+> coverage gap stays named (`ARCHITECTURE.md` §6).
 
 ---
 

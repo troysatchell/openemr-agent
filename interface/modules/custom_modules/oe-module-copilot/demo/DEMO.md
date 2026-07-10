@@ -120,8 +120,8 @@ of an EMR login session.
    `php interface/modules/custom_modules/oe-module-copilot/bin/trace-dashboard.php`
    — latency, tokens, cost, verification counts, honest N/A metrics.
    Mention the correlation id joining the PHI-free trace to the audit log.
-6. **The gate**: KANBAN.md gate line / CI — hard zeros on the critical
-   subset, 316 isolated copilot tests.
+6. **The gate**: the CI clinical-accuracy gate — hard zeros on the critical
+   subset, isolated copilot test suite.
 
 ## Known quirks
 
