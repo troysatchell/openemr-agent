@@ -6,16 +6,18 @@ a commit SHA, a test, and a verification you can re-run.
 
 ## Honest scope
 
-This work touched findings **S4–S11**. S1/S2/S3 were closed in an earlier phase and
-are **not** counted here. Of S4–S11:
+This work touched findings **S4–S11** plus the shared env-detection root cause.
+S1/S2/S3 were closed in an earlier phase and are **not** counted here:
 
-- **5 production security fixes** — S6, S7, S8, S9, S10
-- **2 regression / assurance nets** (tests, not vuln fixes) — S5, S11
-- **1 documented enumeration** (fix deferred) — S4
+- **6 production security fixes** — S6, S7, S8, S9, S10, and the `Kernel::isDev()`
+  env-detection fix behind S9/S7
+- **3 regression / assurance nets** (tests, not vuln fixes) — S5, S11, and the
+  S4 opt-out CI gate
+- **1 documented enumeration** now enforced by that gate — S4
 
-Net change: **9 production files (+266/−21)**, **7 new test files (58 tests)**,
-**0 regressions** across the 3926-test isolated suite, and the security diff is
-**PHPStan L10 clean**.
+Net: **11 production files changed**, **9 new test files**, **0 regressions**
+across the 3926-test isolated suite, and the security diff is **PHPStan L10
+clean** (verified per-file; a real by-reference bug was caught and fixed).
 
 ## Remediation matrix
 
@@ -28,7 +30,8 @@ Net change: **9 production files (+266/−21)**, **7 new test files (58 tests)**
 | **S9** `/_routing_test` hook answers anon on prod path | [CWE-200](https://cwe.mitre.org/data/definitions/200.html) information exposure | Low | Fix | Gate the hook to a `dev` environment; silent in production | `RoutingTestGateTest` (6) + `FrontControllerRoutingTest` (e2e) | `115e17c` |
 | **S5** No default-deny route gate | [CWE-862](https://cwe.mitre.org/data/definitions/862.html) missing authorization | Med *(class)* | Net (CI gate) | Test asserts every REST route carries a recognized authz marker or is on a reviewed public allow-list — a new unguarded route fails CI | `RouteAuthorizationCoverageTest` (2) | `7d3b5fd` |
 | **S11** Login core had no tests | [CWE-1120](https://cwe.mitre.org/data/definitions/1120.html) assurance gap | Systemic | Net (tests) | Characterization net on `confirmPassword` (correct/wrong/empty/unknown) in the no-mutation `otherAuth` mode | `AuthUtilsCharacterizationTest` (4) | `508304e` |
-| **S4** Auth hinges on `$ignoreAuth` ambient global | [CWE-1188](https://cwe.mitre.org/data/definitions/1188.html) insecure default | **High** *(finding)* — **partial** | Docs | Enumerated + classified all 44 opt-out sites; flagged REVIEW items (webhook signatures, portal reset-token gates). **Runtime fix deferred.** | grep-reproducible allow-list | `ef1dcac` |
+| **S4** Auth hinges on `$ignoreAuth` ambient global | [CWE-1188](https://cwe.mitre.org/data/definitions/1188.html) insecure default | **High** *(finding)* — **partial** | Docs + CI gate | Enumerated + classified all 45 opt-out files; a CI gate now fails if a new opt-out ships outside the reviewed allow-list. **Runtime middleware fix still deferred.** | `IgnoreAuthOptOutCoverageTest` (2) | `ef1dcac`, `6484a2f` |
+| **Env** `Kernel::isDev()` — root cause behind S9/S7 | [CWE-1188](https://cwe.mitre.org/data/definitions/1188.html) | Low | Fix | `getenv()` fallback so dev-gating works when `$_ENV` is unpopulated (`variables_order=GPCS`) | `KernelIsDevTest` (4) | `1c319b4` |
 
 Severity column is *our* deployment-risk rating; only **S6** is re-rated above the
 audit (from Med to High), with the stated RCE-enabler justification. Everything else
@@ -80,16 +83,14 @@ S10 audit-toggle change| disabling audit_events_patient-record -> [{"key":"audit
 
 ## Open items (honest)
 
-1. **S4 phase-2** — a log-only runtime `$ignoreAuth` assertion — deferred pending
-   sign-off. The docs-only phase-1 is done.
+1. **S4 runtime middleware** — the full opt-*out* front-controller gate (auth on
+   by default) remains a separate danger-zone project; the CI gate now prevents
+   new un-reviewed opt-outs in the meantime.
 2. **S4 REVIEW items** — human verification that the payment/FaxSMS webhooks
    validate signatures, portal reset/verify flows are token-gated, and the
    utility endpoints are intentionally anonymous (see
    `docs/security/ignoreauth-allowlist.md`).
 3. **S11 deferred seams** — the stateful lockout/timing/LDAP branches — now
    testable since S8 exists.
-4. **`Kernel::isDev()` hardening** — it reads `$_ENV` only, which is empty under
-   this runtime's `variables_order=GPCS`; every env-gate here uses a `getenv()`
-   fallback. A central fix would let those collapse into one place.
 
 Full backlog + per-finding tickets: [`tickets/security/`](tickets/security/README.md).
