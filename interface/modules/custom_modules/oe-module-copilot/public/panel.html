@@ -89,7 +89,15 @@ function el(tag, cls, text) {
 
 function refChips(refs) {
   const box = el("div", "refs");
-  (refs || []).forEach((r) => box.appendChild(el("span", "ref", r)));
+  // A citation is {token, kind, label}; show "Kind · Label" (or the raw token
+  // if an older shape slips through), exact token on hover.
+  (refs || []).forEach((r) => {
+    const cite = (r && typeof r === "object") ? r : { token: String(r), kind: null, label: null };
+    const text = cite.label ? (cite.kind + " · " + cite.label) : (cite.kind || cite.token);
+    const chip = el("span", "ref", text);
+    if (cite.token) chip.title = cite.token;
+    box.appendChild(chip);
+  });
   return box;
 }
 

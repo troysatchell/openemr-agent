@@ -32,9 +32,11 @@
  * that survived verification; REJECTED claims carry text ONLY — an invented
  * citation is never forwarded to the UI as if it were provenance (R6/R10).
  *
- * Every citation token here is minted via ReferenceIndex::tokenFor() — the
- * ONE canonical mint — so every 'refs' entry resolves in the same index the
- * verifier grounded against.
+ * Every 'refs' entry is a citation object {token, kind, label}: the token is
+ * minted via ReferenceIndex::tokenFor() — the ONE canonical mint, so it
+ * resolves in the same index the verifier grounded against — and the kind +
+ * label are added by CitationIndex from the same chart, giving the physician
+ * a readable, clickable citation without inventing anything (R6/R10).
  *
  * This route registers no ACL/authorization on its own: that is the module's
  * GuardedRouteRegistrar's job at the RestApiCreateEvent wiring layer (S5).
@@ -57,7 +59,7 @@ use OpenEMR\Modules\Copilot\Detectors\CriticalFinding;
 use OpenEMR\Modules\Copilot\Detectors\UnevaluableItem;
 use OpenEMR\Modules\Copilot\Orchestration\TurnOrchestrator;
 use OpenEMR\Modules\Copilot\Synthesis\SourceRef;
-use OpenEMR\Modules\Copilot\Verification\ReferenceIndex;
+use OpenEMR\Modules\Copilot\Verification\CitationIndex;
 use OpenEMR\Modules\Copilot\Verification\VerifiedAnswer;
 
 final readonly class TurnEndpoint
@@ -75,10 +77,10 @@ final readonly class TurnEndpoint
      *     correlation_id: ?string,
      *     degraded: bool,
      *     degraded_reason: ?string,
-     *     must_not_miss: list<array{type: string, summary: string, refs: list<string>}>,
-     *     unevaluable: list<array{reason: string, refs: list<string>}>,
+     *     must_not_miss: list<array{type: string, summary: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *     unevaluable: list<array{reason: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
      *     answer: null|array{
-     *         grounded: list<array{text: string, refs: list<string>}>,
+     *         grounded: list<array{text: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
      *         rejected: list<array{text: string}>,
      *     },
      * }
@@ -100,9 +102,9 @@ final readonly class TurnEndpoint
             'correlation_id' => $result->correlationId,
             'degraded' => $result->degraded,
             'degraded_reason' => $result->degradedReason,
-            'must_not_miss' => $this->shapeFindings($result->mustNotMiss),
-            'unevaluable' => $this->shapeUnevaluable($result->unevaluable),
-            'answer' => $result->answer === null ? null : $this->shapeAnswer($result->answer),
+            'must_not_miss' => $this->shapeFindings($result->mustNotMiss, $result->citations),
+            'unevaluable' => $this->shapeUnevaluable($result->unevaluable, $result->citations),
+            'answer' => $result->answer === null ? null : $this->shapeAnswer($result->answer, $result->citations),
         ];
     }
 
@@ -149,16 +151,16 @@ final readonly class TurnEndpoint
     /**
      * @param list<CriticalFinding> $findings
      *
-     * @return list<array{type: string, summary: string, refs: list<string>}>
+     * @return list<array{type: string, summary: string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeFindings(array $findings): array
+    private function shapeFindings(array $findings, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($findings as $finding) {
             $shaped[] = [
                 'type' => $finding->type->name,
                 'summary' => $finding->summary,
-                'refs' => $this->tokensFor($finding->sources),
+                'refs' => $this->citationsFor($finding->sources, $citations),
             ];
         }
 
@@ -168,15 +170,15 @@ final readonly class TurnEndpoint
     /**
      * @param list<UnevaluableItem> $items
      *
-     * @return list<array{reason: string, refs: list<string>}>
+     * @return list<array{reason: string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeUnevaluable(array $items): array
+    private function shapeUnevaluable(array $items, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($items as $item) {
             $shaped[] = [
                 'reason' => $item->reason,
-                'refs' => $this->tokensFor($item->sources),
+                'refs' => $this->citationsFor($item->sources, $citations),
             ];
         }
 
@@ -185,17 +187,17 @@ final readonly class TurnEndpoint
 
     /**
      * @return array{
-     *     grounded: list<array{text: string, refs: list<string>}>,
+     *     grounded: list<array{text: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
      *     rejected: list<array{text: string}>,
      * }
      */
-    private function shapeAnswer(VerifiedAnswer $answer): array
+    private function shapeAnswer(VerifiedAnswer $answer, CitationIndex $citations): array
     {
         $grounded = [];
         foreach ($answer->grounded as $claim) {
             $grounded[] = [
                 'text' => $claim->text,
-                'refs' => $this->tokensFor($claim->sources),
+                'refs' => $this->citationsFor($claim->sources, $citations),
             ];
         }
 
@@ -211,14 +213,17 @@ final readonly class TurnEndpoint
     }
 
     /**
+     * Each citation carries the exact grounding token (provenance fidelity)
+     * plus the humanized kind and record label the panel renders (R6/R10).
+     *
      * @param list<SourceRef> $sources
      *
-     * @return list<string>
+     * @return list<array{token: string, kind: string, label: string|null}>
      */
-    private function tokensFor(array $sources): array
+    private function citationsFor(array $sources, CitationIndex $citations): array
     {
         return array_map(
-            static fn (SourceRef $source): string => ReferenceIndex::tokenFor($source),
+            static fn (SourceRef $source): array => $citations->describe($source),
             $sources,
         );
     }

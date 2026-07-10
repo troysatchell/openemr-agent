@@ -57,6 +57,7 @@ use OpenEMR\Modules\Copilot\Observability\StepOutcome;
 use OpenEMR\Modules\Copilot\Observability\StepRecord;
 use OpenEMR\Modules\Copilot\Observability\TraceContext;
 use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
+use OpenEMR\Modules\Copilot\Verification\CitationIndex;
 use OpenEMR\Modules\Copilot\Verification\ClaimVerifier;
 use OpenEMR\Modules\Copilot\Verification\ReferenceIndex;
 use Psr\Clock\ClockInterface;
@@ -127,6 +128,12 @@ final class TurnOrchestrator
             $unevaluable = [...$unevaluable, ...$report->unevaluable];
         }
 
+        // Citation labels for the wire, from the same freshly read chart the
+        // tokens are minted against — carried on the result so every chip
+        // (findings and grounded claims alike) can name its record. Built now
+        // so it survives the degraded path below (R6/R10).
+        $citations = CitationIndex::fromChart($provided->chart);
+
         // (c) Minimum-necessary payload, built from the freshly read chart only.
         $payload = $this->runStep(
             $context,
@@ -184,6 +191,7 @@ final class TurnOrchestrator
                 degraded: true,
                 degradedReason: self::DEGRADED_REASON,
                 disclosure: $payload->disclosure,
+                citations: $citations,
                 correlationId: $context->correlationId,
             );
         }
@@ -237,6 +245,7 @@ final class TurnOrchestrator
             degraded: false,
             degradedReason: null,
             disclosure: $payload->disclosure,
+            citations: $citations,
             correlationId: $context->correlationId,
         );
     }

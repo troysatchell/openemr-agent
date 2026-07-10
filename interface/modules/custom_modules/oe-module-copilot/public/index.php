@@ -91,7 +91,10 @@ $csrfToken = CsrfUtils::collectCsrfToken($session);
   .claim.rejected { border-style:dashed; color:var(--rej); background:#f4f5f7; }
   .claim.rejected .flag { display:block; font-size:11px; font-weight:700; color:var(--rej); text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
   .refs { margin-top:5px; }
-  .ref { display:inline-block; font:11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background:#eef1f5; border:1px solid var(--line); border-radius:4px; padding:0 6px; margin:0 4px 3px 0; color:#33475c; }
+  .ref { display:inline-block; font:11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; background:#eef1f5; border:1px solid var(--line); border-radius:4px; padding:0 6px; margin:0 4px 3px 0; color:#33475c; }
+  a.ref { text-decoration:none; cursor:pointer; }
+  a.ref:hover { border-color:#20476b; color:#20476b; background:#e4ecf4; }
+  a.ref:focus-visible { outline:2px solid #20476b; outline-offset:1px; }
   .corr { color:var(--mut); font:11px ui-monospace, SFMono-Regular, Menlo, monospace; margin-top:16px; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
   .suggest-row { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 8px; }
@@ -160,22 +163,12 @@ function setIdle(btn) {
   btn.disabled = false;
 }
 
-// Suggested questions are DERIVED from the rendered snapshot: citation refs
-// resolved back to the med/allergy/lab names carried on the same wire
-// payload, so a suggestion never names anything the chart didn't (DESIGN.md:
-// provenance is part of the content). None of this is model output.
-function refNameMap(snap) {
-  const map = {};
-  (snap.current_medications || []).forEach((m) => (m.refs || []).forEach((r) => { map[r] = m.name; }));
-  (snap.current_allergies || []).forEach((a) => (a.refs || []).forEach((r) => { map[r] = a.substance; }));
-  (snap.new_labs || []).forEach((l) => (l.refs || []).forEach((r) => { map[r] = l.analyte; }));
-  (snap.unknown_currency || []).forEach((u) => (u.refs || []).forEach((r) => { map[r] = u.name; }));
-  return map;
-}
-
+// Suggested questions are DERIVED from the rendered snapshot: each citation
+// already carries the record's own label on the wire, so a suggestion can
+// only ever name a record the chart actually cited (DESIGN.md: provenance is
+// part of the content). None of this is model output.
 function buildSuggestions(snap) {
-  const names = refNameMap(snap);
-  const resolve = (refs) => [...new Set((refs || []).map((r) => names[r]).filter(Boolean))];
+  const resolve = (refs) => [...new Set((refs || []).map((r) => r && r.label).filter(Boolean))];
   const out = [];
   let coveredLabs = false;
   (snap.must_not_miss || []).forEach((f) => {
@@ -239,9 +232,37 @@ function el(tag, cls, text) {
   return node;
 }
 
+// All citations on screen belong to the selected patient, so a chip links to
+// that patient's chart in OpenEMR. set_pid is OpenEMR's own "open this
+// patient's record" mechanism (interface/main/main_screen.php); it opens the
+// chart summary in a new tab — the record in context, not an exact-row jump.
+function chartLinkFor() {
+  if (!currentPatient || !currentPatient.pid) return null;
+  return "/interface/patient_file/summary/demographics.php?set_pid=" + encodeURIComponent(currentPatient.pid);
+}
+
+// A citation is {token, kind, label}. The chip reads "Kind · Label" (or
+// just the kind when the record carries no label); the exact grounding token
+// stays available on hover — readable provenance without losing the verifier
+// key it was minted from.
 function refChips(refs) {
   const box = el("div", "refs");
-  (refs || []).forEach((r) => box.appendChild(el("span", "ref", r)));
+  const href = chartLinkFor();
+  (refs || []).forEach((r) => {
+    const cite = (r && typeof r === "object") ? r : { token: String(r), kind: String(r), label: null };
+    const text = cite.label ? (cite.kind + " · " + cite.label) : cite.kind;
+    let chip;
+    if (href) {
+      chip = el("a", "ref", text);
+      chip.href = href;
+      chip.target = "_blank";
+      chip.rel = "noopener";
+    } else {
+      chip = el("span", "ref", text);
+    }
+    if (cite.token) chip.title = cite.token;
+    box.appendChild(chip);
+  });
   return box;
 }
 
@@ -444,6 +465,11 @@ async function loadSnapshot() {
   ask.disabled = true;
   try {
     const data = await post("snapshot", { patient_uuid: currentPatient.uuid });
+    // Capture the trusted pid before rendering, so citation chips can link
+    // into this patient's chart.
+    if (data.snapshot && data.snapshot.patient) {
+      currentPatient.pid = data.snapshot.patient.pid;
+    }
     renderSnapshot(data);
   } catch (e) {
     zone.replaceChildren(el("div", "banner error", "Could not load the snapshot: " + e.message));

@@ -31,6 +31,7 @@ namespace OpenEMR\Modules\Copilot\Orchestration;
 use OpenEMR\Modules\Copilot\Audit\Disclosure;
 use OpenEMR\Modules\Copilot\Detectors\CriticalFinding;
 use OpenEMR\Modules\Copilot\Detectors\UnevaluableItem;
+use OpenEMR\Modules\Copilot\Verification\CitationIndex;
 use OpenEMR\Modules\Copilot\Verification\VerifiedAnswer;
 
 final readonly class TurnResult
@@ -38,6 +39,10 @@ final readonly class TurnResult
     /**
      * @param list<CriticalFinding> $mustNotMiss deterministic critical-subset findings; survive model failure
      * @param list<UnevaluableItem> $unevaluable deterministic critical-subset items the detectors could not evaluate
+     * @param CitationIndex         $citations   labels the tokens on findings and grounded claims back to the
+     *                                           record they cite; built from the same chart, so a chip can only
+     *                                           name a record that exists (R6/R10). Present even on a degraded
+     *                                           turn — the surviving findings still carry citations.
      */
     public function __construct(
         public array $mustNotMiss,
@@ -46,6 +51,7 @@ final readonly class TurnResult
         public bool $degraded,
         public ?string $degradedReason,
         public ?Disclosure $disclosure,
+        public CitationIndex $citations,
         public ?string $correlationId = null,
     ) {
         if ($degraded) {

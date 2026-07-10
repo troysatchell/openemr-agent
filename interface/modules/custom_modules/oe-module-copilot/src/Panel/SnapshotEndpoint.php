@@ -7,8 +7,10 @@
  *
  * Wire-shapes a patient uuid into the GlanceableSnapshot the panel renders,
  * mirroring TurnEndpoint's conventions (src/Routes/TurnEndpoint.php):
- * snake_case keys, finding types by enum name, every citation token minted
- * via ReferenceIndex::tokenFor() — the one canonical mint. A blank
+ * snake_case keys, finding types by enum name, every 'refs' entry a citation
+ * object {token, kind, label} — the token minted via ReferenceIndex::tokenFor()
+ * (the one canonical mint), the kind + label added by CitationIndex from the
+ * same chart so the physician reads (and clicks) real provenance. A blank
  * patient_uuid is refused before any chart read or last-visit lookup
  * (mirrors TurnEndpoint::requireNonBlankString). Composes the REAL
  * deterministic detectors (CriticalSubsetDetectors — the critical subset is
@@ -45,7 +47,7 @@ use OpenEMR\Modules\Copilot\Synthesis\AllergyEntry;
 use OpenEMR\Modules\Copilot\Synthesis\LabResultEntry;
 use OpenEMR\Modules\Copilot\Synthesis\MedicationEntry;
 use OpenEMR\Modules\Copilot\Synthesis\SourceRef;
-use OpenEMR\Modules\Copilot\Verification\ReferenceIndex;
+use OpenEMR\Modules\Copilot\Verification\CitationIndex;
 use Psr\Clock\ClockInterface;
 
 final readonly class SnapshotEndpoint
@@ -73,12 +75,12 @@ final readonly class SnapshotEndpoint
      *         patient: array{pid: int, uuid: ?string, first_name: ?string, last_name: ?string, dob: ?string, sex: ?string},
      *         quiet: bool,
      *         changes_basis: string,
-     *         must_not_miss: list<array{type: string, summary: string, refs: list<string>}>,
-     *         unevaluable: list<array{reason: string, refs: list<string>}>,
-     *         unknown_currency: list<array{kind: string, name: string, refs: list<string>}>,
-     *         new_labs: list<array{analyte: string, value: ?float, unit: ?string, resulted_at: ?string, refs: list<string>}>,
-     *         current_medications: list<array{name: string, refs: list<string>}>,
-     *         current_allergies: list<array{substance: string, refs: list<string>}>,
+     *         must_not_miss: list<array{type: string, summary: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *         unevaluable: list<array{reason: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *         unknown_currency: list<array{kind: string, name: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *         new_labs: list<array{analyte: string, value: ?float, unit: ?string, resulted_at: ?string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *         current_medications: list<array{name: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *         current_allergies: list<array{substance: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
      *     },
      * }
      *
@@ -113,7 +115,7 @@ final readonly class SnapshotEndpoint
         return [
             'degraded' => false,
             'degraded_reason' => null,
-            'snapshot' => $this->shapeSnapshot($snapshot),
+            'snapshot' => $this->shapeSnapshot($snapshot, CitationIndex::fromChart($provided->chart)),
         ];
     }
 
@@ -143,18 +145,18 @@ final readonly class SnapshotEndpoint
      *     current_allergies: list<array{substance: string, refs: list<string>}>,
      * }
      */
-    private function shapeSnapshot(GlanceableSnapshot $snapshot): array
+    private function shapeSnapshot(GlanceableSnapshot $snapshot, CitationIndex $citations): array
     {
         return [
             'patient' => $this->shapePatient($snapshot->patient),
             'quiet' => $snapshot->isQuiet(),
             'changes_basis' => $this->shapeChangesBasis($snapshot->changesBasis),
-            'must_not_miss' => $this->shapeFindings($snapshot->mustNotMiss),
-            'unevaluable' => $this->shapeUnevaluable($snapshot->unevaluable),
-            'unknown_currency' => $this->shapeUnknownCurrency($snapshot->unknownCurrency),
-            'new_labs' => $this->shapeLabs($snapshot->newLabs),
-            'current_medications' => $this->shapeMedications($snapshot->currentMedications),
-            'current_allergies' => $this->shapeAllergies($snapshot->currentAllergies),
+            'must_not_miss' => $this->shapeFindings($snapshot->mustNotMiss, $citations),
+            'unevaluable' => $this->shapeUnevaluable($snapshot->unevaluable, $citations),
+            'unknown_currency' => $this->shapeUnknownCurrency($snapshot->unknownCurrency, $citations),
+            'new_labs' => $this->shapeLabs($snapshot->newLabs, $citations),
+            'current_medications' => $this->shapeMedications($snapshot->currentMedications, $citations),
+            'current_allergies' => $this->shapeAllergies($snapshot->currentAllergies, $citations),
         ];
     }
 
@@ -189,16 +191,16 @@ final readonly class SnapshotEndpoint
     /**
      * @param list<CriticalFinding> $findings
      *
-     * @return list<array{type: string, summary: string, refs: list<string>}>
+     * @return list<array{type: string, summary: string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeFindings(array $findings): array
+    private function shapeFindings(array $findings, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($findings as $finding) {
             $shaped[] = [
                 'type' => $finding->type->name,
                 'summary' => $finding->summary,
-                'refs' => $this->tokensFor($finding->sources),
+                'refs' => $this->citationsFor($finding->sources, $citations),
             ];
         }
 
@@ -208,15 +210,15 @@ final readonly class SnapshotEndpoint
     /**
      * @param list<UnevaluableItem> $items
      *
-     * @return list<array{reason: string, refs: list<string>}>
+     * @return list<array{reason: string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeUnevaluable(array $items): array
+    private function shapeUnevaluable(array $items, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($items as $item) {
             $shaped[] = [
                 'reason' => $item->reason,
-                'refs' => $this->tokensFor($item->sources),
+                'refs' => $this->citationsFor($item->sources, $citations),
             ];
         }
 
@@ -229,9 +231,9 @@ final readonly class SnapshotEndpoint
      *
      * @param list<MedicationEntry|AllergyEntry> $entries
      *
-     * @return list<array{kind: string, name: string, refs: list<string>}>
+     * @return list<array{kind: string, name: string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeUnknownCurrency(array $entries): array
+    private function shapeUnknownCurrency(array $entries, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($entries as $entry) {
@@ -239,7 +241,7 @@ final readonly class SnapshotEndpoint
                 $shaped[] = [
                     'kind' => 'medication',
                     'name' => $entry->name,
-                    'refs' => $this->tokensFor($entry->sources),
+                    'refs' => $this->citationsFor($entry->sources, $citations),
                 ];
                 continue;
             }
@@ -247,7 +249,7 @@ final readonly class SnapshotEndpoint
             $shaped[] = [
                 'kind' => 'allergy',
                 'name' => $entry->substance,
-                'refs' => $this->tokensFor($entry->sources),
+                'refs' => $this->citationsFor($entry->sources, $citations),
             ];
         }
 
@@ -257,9 +259,9 @@ final readonly class SnapshotEndpoint
     /**
      * @param list<LabResultEntry> $labs
      *
-     * @return list<array{analyte: string, value: ?float, unit: ?string, resulted_at: ?string, refs: list<string>}>
+     * @return list<array{analyte: string, value: ?float, unit: ?string, resulted_at: ?string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeLabs(array $labs): array
+    private function shapeLabs(array $labs, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($labs as $lab) {
@@ -268,7 +270,7 @@ final readonly class SnapshotEndpoint
                 'value' => $lab->value,
                 'unit' => $lab->unit,
                 'resulted_at' => $lab->resultedAt?->format(\DateTimeInterface::ATOM),
-                'refs' => $this->tokensFor($lab->sources),
+                'refs' => $this->citationsFor($lab->sources, $citations),
             ];
         }
 
@@ -278,15 +280,15 @@ final readonly class SnapshotEndpoint
     /**
      * @param list<MedicationEntry> $medications
      *
-     * @return list<array{name: string, refs: list<string>}>
+     * @return list<array{name: string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeMedications(array $medications): array
+    private function shapeMedications(array $medications, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($medications as $medication) {
             $shaped[] = [
                 'name' => $medication->name,
-                'refs' => $this->tokensFor($medication->sources),
+                'refs' => $this->citationsFor($medication->sources, $citations),
             ];
         }
 
@@ -296,15 +298,15 @@ final readonly class SnapshotEndpoint
     /**
      * @param list<AllergyEntry> $allergies
      *
-     * @return list<array{substance: string, refs: list<string>}>
+     * @return list<array{substance: string, refs: list<array{token: string, kind: string, label: string|null}>}>
      */
-    private function shapeAllergies(array $allergies): array
+    private function shapeAllergies(array $allergies, CitationIndex $citations): array
     {
         $shaped = [];
         foreach ($allergies as $allergy) {
             $shaped[] = [
                 'substance' => $allergy->substance,
-                'refs' => $this->tokensFor($allergy->sources),
+                'refs' => $this->citationsFor($allergy->sources, $citations),
             ];
         }
 
@@ -312,18 +314,19 @@ final readonly class SnapshotEndpoint
     }
 
     /**
-     * The one canonical citation-token mint (ReferenceIndex::tokenFor()) —
-     * every 'refs' entry here resolves in the same index the verifier
-     * grounds against (R6/R10).
+     * Each citation carries the exact grounding token (the one canonical mint,
+     * ReferenceIndex::tokenFor(), via CitationIndex) plus the humanized kind
+     * and record label the panel renders — provenance the physician can read
+     * and click, never invented (R6/R10; DESIGN.md).
      *
      * @param list<SourceRef> $sources
      *
-     * @return list<string>
+     * @return list<array{token: string, kind: string, label: string|null}>
      */
-    private function tokensFor(array $sources): array
+    private function citationsFor(array $sources, CitationIndex $citations): array
     {
         return array_map(
-            static fn (SourceRef $source): string => ReferenceIndex::tokenFor($source),
+            static fn (SourceRef $source): array => $citations->describe($source),
             $sources,
         );
     }
