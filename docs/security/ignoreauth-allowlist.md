@@ -18,7 +18,10 @@ listed here) is deferred pending founder approval — see `tickets/security/SEC-
 >   --include='*.php' interface library apis modules public portal \
 >   | grep -vE '//|/\*'
 > ```
-> Enumerated 2026-07-10 → 44 code sites (docblock references excluded).
+> Enumerated 2026-07-10 → 45 files (docblock references excluded). This
+> allow-list is enforced by
+> `tests/Tests/Isolated/Security/IgnoreAuthOptOutCoverageTest` — a new opt-out
+> file not on the reviewed list fails CI.
 
 ## Verdict legend
 - **ALLOW** — legitimately unauthenticated by the staff gate; a *different*
@@ -73,6 +76,7 @@ portal authenticates the patient through its own mechanism.
 | `portal/sign/assets/signer_modal.php:40` |
 | `portal/sign/lib/save-signature.php:39` |
 | `portal/sign/lib/show-signature.php:37` |
+| `portal/verify_session.php:62` |
 
 ## C. Background / system entry points — ALLOW (note)
 Run as the system (no interactive user). **Note:** these must be network-restricted
@@ -94,6 +98,7 @@ verified signature/shared secret. Confirm each validates before trusting input.
 | `interface/webhooks/payment/rainforest.php:18` | confirm Rainforest webhook signature verification |
 | `portal/portal_payment.rainforest.php:21` | confirm Rainforest webhook signature verification |
 | `interface/modules/custom_modules/oe-module-faxsms/library/webhook_receiver.php:25` | confirm inbound FaxSMS webhook secret/signature check |
+| `interface/modules/custom_modules/oe-module-faxsms/library/phone-services/voice_webhook.php:29` | confirm FaxSMS voice webhook secret/signature check |
 
 ## E. Portal pre-auth account flows — REVIEW
 Part of the *unauthenticated* portal reset/verify flow (patient not yet logged
