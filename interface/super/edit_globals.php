@@ -32,6 +32,7 @@ use OpenEMR\Common\Acl\AccessDeniedHelper;
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Common\Auth\AuthHash;
 use OpenEMR\Common\Csrf\CsrfUtils;
+use OpenEMR\Common\Logging\AuditSettingsChangeDetector;
 use OpenEMR\Common\Logging\EventAuditLogger;
 use OpenEMR\Common\Session\SessionWrapperFactory;
 use OpenEMR\Core\Header;
@@ -314,6 +315,22 @@ function checkBackgroundServices(): void
         $forceBreakglassLogStatusFieldNew = $forceBreakglassLogStatusNew['gl_value'];
         if ($forceBreakglassLogStatusFieldOld != $forceBreakglassLogStatusFieldNew) {
             EventAuditLogger::getInstance()->auditSQLAuditTamper('gbl_force_log_breakglass', $forceBreakglassLogStatusFieldNew);
+        }
+
+        // S10 (AUDIT.md): the granular audit_events_* category toggles were
+        // previously silent on change. Log each change through the same
+        // tamper-audit path as enable_auditlog / gbl_force_log_breakglass so
+        // disabling any audit category cannot happen invisibly (HIPAA
+        // §164.312(b)).
+        $auditControlsOld = [];
+        $auditControlsNew = [];
+        foreach (AuditSettingsChangeDetector::CONTROL_KEYS as $auditControlKey) {
+            $auditControlsOld[$auditControlKey] = (string) ($old_globals[$auditControlKey]['gl_value'] ?? '');
+            $auditControlRow = sqlQuery("SELECT `gl_value` FROM `globals` WHERE `gl_name` = ?", [$auditControlKey]);
+            $auditControlsNew[$auditControlKey] = (string) ($auditControlRow['gl_value'] ?? '');
+        }
+        foreach (AuditSettingsChangeDetector::changedControls($auditControlsOld, $auditControlsNew) as $auditControlChange) {
+            EventAuditLogger::getInstance()->auditSQLAuditTamper($auditControlChange['key'], $auditControlChange['new']);
         }
 
         echo "<script>";
