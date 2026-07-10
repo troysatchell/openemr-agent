@@ -21,6 +21,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
+use function str_ends_with;
 use function str_starts_with;
 
 /**
@@ -181,13 +182,35 @@ readonly class FallbackRouter
     }
 
     /**
+     * Pure predicate for whether the routing-test hook should respond.
+     *
+     * S9 (AUDIT.md): the /_routing_test affordance answered any caller on the
+     * production request path, confirming the routing layer to anonymous
+     * probers. Gate it to a dev environment so it's silent in production.
+     */
+    public static function shouldServeRoutingTest(string $requestUri, bool $isDev): bool
+    {
+        return $isDev && str_ends_with($requestUri, '/_routing_test');
+    }
+
+    /**
      * Test endpoint for E2E routing validation (no DB dependency).
      * Returns 418 with JSON identifying which entry point was reached.
-     * Does nothing if the request URI doesn't end with /_routing_test.
+     * Does nothing outside a dev environment, or if the request URI doesn't
+     * end with /_routing_test.
      */
     public static function handleRoutingTestIfRequested(string $requestUri, string $entryPoint): void
     {
-        if (!str_ends_with($requestUri, '/_routing_test')) {
+        // S9 (AUDIT.md): resolved the same way as Kernel::isDev() so this
+        // hook can never confirm the routing layer to a production caller.
+        // Falls back to getenv() because $_ENV is only populated here when
+        // `E` is present in the `variables_order` ini directive (or a
+        // bootstrap-loaded .env sets it explicitly) — getenv() reads the
+        // real process environment regardless of that setting.
+        $envValue = $_ENV['OPENEMR__ENVIRONMENT'] ?? null;
+        $envValue = is_string($envValue) ? $envValue : getenv('OPENEMR__ENVIRONMENT');
+        $isDev = ($envValue === 'dev');
+        if (!self::shouldServeRoutingTest($requestUri, $isDev)) {
             return;
         }
         http_response_code(418);
