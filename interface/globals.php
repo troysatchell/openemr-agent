@@ -838,6 +838,17 @@ switch ($userPhpDebug) {
         break;
 }
 
+// S7 (AUDIT.md): never leak PHP errors to the client outside a dev
+// environment, regardless of the user_php_debug global set above.
+// Resolve the environment like Kernel::isDev(), but fall back to getenv()
+// because this runtime's variables_order (GPCS) leaves $_ENV unpopulated
+// from the OS environment (same reason as the S9 routing-test gate).
+$oeEnvironment = $_ENV['OPENEMR__ENVIRONMENT'] ?? null;
+$oeEnvironment = is_string($oeEnvironment) ? $oeEnvironment : (getenv('OPENEMR__ENVIRONMENT') ?: '');
+if (\OpenEMR\Common\Environment\ErrorDisplayPolicy::shouldForceOff($oeEnvironment)) {
+    ini_set('display_errors', '0');
+}
+
 // Re-set the local variables that aren't in $GLOBALS
 $globalsBag->set('webserver_root', $webserver_root);
 $globalsBag->set('web_root', $web_root);
