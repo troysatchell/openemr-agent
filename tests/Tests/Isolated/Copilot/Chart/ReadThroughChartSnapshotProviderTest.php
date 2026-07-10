@@ -248,6 +248,59 @@ class ReadThroughChartSnapshotProviderTest extends TestCase
         $this->assertSame(5, $mapped->unmappableRowCount, 'Every unusable row is COUNTED — an honest number instead of a silent hole in the chart.');
     }
 
+    public function testAbsentLabDateIsCarriedUndatedNeverDroppedAsUnmappable(): void
+    {
+        // An ABSENT date is a known unknown (D1): the row is otherwise fully
+        // trustworthy, and LabResultEntry carries resultedAt=null exactly so
+        // the composer can surface it as unevaluable against a last-visit
+        // date (D0/D6) instead of leaving a silent hole. GARBAGE in the date
+        // field is different — it poisons trust in the row, which stays
+        // unmappable (the frozen contract above). OpenEMR's live FHIR layer
+        // emits a data-absent-reason extension object for missing report
+        // dates, so both absence shapes are pinned here.
+        $mapped = (new FhirChartMapper())->map(new RawChartBundle(
+            patient: [self::patientResource()],
+            medications: [],
+            observations: [
+                [
+                    'resourceType' => 'Observation',
+                    'id' => 'ob-nodate',
+                    'category' => [['coding' => [['code' => 'laboratory']]]],
+                    'code' => ['text' => 'Vitamin D, 25-Hydroxy'],
+                    'valueQuantity' => ['value' => 31.0, 'unit' => 'ng/mL'],
+                ],
+                [
+                    'resourceType' => 'Observation',
+                    'id' => 'ob-absentreason',
+                    'category' => [['coding' => [['code' => 'laboratory']]]],
+                    'code' => ['text' => 'TSH'],
+                    'valueQuantity' => ['value' => 2.1, 'unit' => 'mIU/L'],
+                    'effectiveDateTime' => ['extension' => [[
+                        'url' => 'http://hl7.org/fhir/StructureDefinition/data-absent-reason',
+                        'valueCode' => 'unknown',
+                    ]]],
+                ],
+                [
+                    'resourceType' => 'Observation',
+                    'id' => 'ob-baddate',
+                    'category' => [['coding' => [['code' => 'laboratory']]]],
+                    'code' => ['text' => 'Sodium'],
+                    'valueQuantity' => ['value' => 130.0, 'unit' => 'mmol/L'],
+                    'effectiveDateTime' => 'not-a-date',
+                ],
+            ],
+            allergies: [],
+            problems: [],
+        ));
+
+        $this->assertCount(2, $mapped->labs, 'Undated-but-trustworthy rows are carried; only the garbage-date row is unusable.');
+        $this->assertSame('Vitamin D, 25-Hydroxy', $mapped->labs[0]->analyte);
+        $this->assertNull($mapped->labs[0]->resultedAt, 'Absence is carried as null — never guessed, never dropped (D0/D6).');
+        $this->assertSame('TSH', $mapped->labs[1]->analyte);
+        $this->assertNull($mapped->labs[1]->resultedAt);
+        $this->assertSame(1, $mapped->unmappableRowCount, 'Only the unparseable-garbage date poisons its row.');
+    }
+
     public function testNonLaboratoryObservationsAreOutOfScopeByDesignNotUnmappable(): void
     {
         $mapped = (new FhirChartMapper())->map(new RawChartBundle(

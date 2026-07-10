@@ -19,9 +19,15 @@
  *    round-trip validation); anything else, including free text like
  *    'not-a-date', fails to parse rather than being guessed (D0/D6).
  *  - A row missing a citable id, or missing the field that makes it usable
- *    (name/analyte/substance, a numeric lab value, a lab unit, a parseable
- *    lab date), is UNMAPPABLE and is counted via MappedChart::$unmappableRowCount
- *    — never silently dropped and never silently included.
+ *    (name/analyte/substance, a numeric lab value, a lab unit), is
+ *    UNMAPPABLE and is counted via MappedChart::$unmappableRowCount —
+ *    never silently dropped and never silently included.
+ *  - A lab date is three-state: parseable → carried; ABSENT (missing key or
+ *    a data-absent-reason extension) → the row is carried with
+ *    resultedAt=null so the composer can surface it as unevaluable against
+ *    a last-visit date (D0/D6) — a known unknown, not a mapping failure;
+ *    a date STRING that fails strict parsing → garbage poisons the row,
+ *    which stays unmappable.
  *  - Rows that are simply out of v1 scope by design (non-laboratory
  *    Observations) are skipped WITHOUT counting — that is selection, not a
  *    mapping failure.
@@ -211,9 +217,16 @@ final readonly class FhirChartMapper
             return null;
         }
 
-        $resultedAt = $this->parseEffectiveDateTime($resource['effectiveDateTime'] ?? null);
-        if ($resultedAt === null) {
-            return null;
+        // Three-state date (see class docblock): absent → carried undated (a
+        // known unknown the composer surfaces as unevaluable, D0/D6);
+        // present-but-unparseable → garbage poisons the row (unmappable).
+        $rawEffective = $this->extractString($resource['effectiveDateTime'] ?? null);
+        $resultedAt = null;
+        if ($rawEffective !== null) {
+            $resultedAt = $this->parseEffectiveDateTime($rawEffective);
+            if ($resultedAt === null) {
+                return null;
+            }
         }
 
         return new LabResultEntry($analyte, $value, $unit, $resultedAt, [new SourceRef('Observation', $id)]);
