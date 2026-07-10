@@ -5,6 +5,9 @@
  * are invoked by name from a DB row; only an explicit allow-list of shipped
  * callables may run, so table-write access cannot become code execution.
  *
+ * Named BackgroundServiceCallableAllowlist to avoid colliding with the existing
+ * production BackgroundServiceRegistry (the row-CRUD class).
+ *
  * @package   openemr
  * @link      https://www.open-emr.org
  * @author    Troy Satchell <troysatchell@gmail.com>
@@ -16,15 +19,15 @@ declare(strict_types=1);
 
 namespace OpenEMR\Tests\Isolated\Services\Background;
 
-use OpenEMR\Services\Background\BackgroundServiceRegistry;
+use OpenEMR\Services\Background\BackgroundServiceCallableAllowlist;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * S6 (AUDIT.md): the registry is the allow-list gate the runner consults before
+ * S6 (AUDIT.md): the allow-list is the gate the runner consults before
  * dynamically invoking a background-service function named in a DB row.
  */
-class BackgroundServiceRegistryTest extends TestCase
+class BackgroundServiceCallableAllowlistTest extends TestCase
 {
     /**
      * @return array<string, array{string}>
@@ -57,7 +60,7 @@ class BackgroundServiceRegistryTest extends TestCase
     public function testShippedCallablesAreAllowed(string $function): void
     {
         self::assertTrue(
-            BackgroundServiceRegistry::isAllowed($function),
+            BackgroundServiceCallableAllowlist::isAllowed($function),
             "Shipped background-service callable '$function' must be allow-listed",
         );
     }
@@ -83,7 +86,7 @@ class BackgroundServiceRegistryTest extends TestCase
     public function testUnlistedCallablesAreRejected(string $function): void
     {
         self::assertFalse(
-            BackgroundServiceRegistry::isAllowed($function),
+            BackgroundServiceCallableAllowlist::isAllowed($function),
             "Non-allow-listed callable '$function' must be rejected",
         );
     }
