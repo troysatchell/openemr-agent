@@ -94,6 +94,10 @@ $csrfToken = CsrfUtils::collectCsrfToken($session);
   .ref { display:inline-block; font:11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background:#eef1f5; border:1px solid var(--line); border-radius:4px; padding:0 6px; margin:0 4px 3px 0; color:#33475c; }
   .corr { color:var(--mut); font:11px ui-monospace, SFMono-Regular, Menlo, monospace; margin-top:16px; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
+  .suggest-row { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 8px; }
+  .suggest-row .label { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; align-self:center; }
+  button.suggest { margin:0; padding:4px 10px; font-size:12.5px; font-weight:400; background:#fff; color:#20476b; border:1px solid var(--line); border-radius:14px; cursor:pointer; }
+  button.suggest:hover { border-color:#20476b; }
   .status { font-size:12px; color:var(--crit); margin-top:6px; }
 </style>
 </head>
@@ -119,7 +123,8 @@ $csrfToken = CsrfUtils::collectCsrfToken($session);
 
   <fieldset>
     <legend><?php echo xlt('Ask about this patient'); ?></legend>
-    <textarea id="question" placeholder="<?php echo xla('e.g. Anything new on the potassium trend? Is the anticoagulation current?'); ?>"></textarea>
+    <div class="suggest-row" id="suggestions"></div>
+    <textarea id="question" placeholder="<?php echo xla('Select a patient above to see suggested questions for this chart.'); ?>"></textarea>
     <button id="ask" disabled><?php echo xlt('Ask'); ?></button>
     <div class="hint"><?php echo xlt('Every turn re-reads the live chart. Prior turns inform phrasing only — never facts.'); ?></div>
   </fieldset>
@@ -153,6 +158,78 @@ function setWorking(btn, workingLabel) {
 function setIdle(btn) {
   if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
   btn.disabled = false;
+}
+
+// Suggested questions are DERIVED from the rendered snapshot: citation refs
+// resolved back to the med/allergy/lab names carried on the same wire
+// payload, so a suggestion never names anything the chart didn't (DESIGN.md:
+// provenance is part of the content). None of this is model output.
+function refNameMap(snap) {
+  const map = {};
+  (snap.current_medications || []).forEach((m) => (m.refs || []).forEach((r) => { map[r] = m.name; }));
+  (snap.current_allergies || []).forEach((a) => (a.refs || []).forEach((r) => { map[r] = a.substance; }));
+  (snap.new_labs || []).forEach((l) => (l.refs || []).forEach((r) => { map[r] = l.analyte; }));
+  (snap.unknown_currency || []).forEach((u) => (u.refs || []).forEach((r) => { map[r] = u.name; }));
+  return map;
+}
+
+function buildSuggestions(snap) {
+  const names = refNameMap(snap);
+  const resolve = (refs) => [...new Set((refs || []).map((r) => names[r]).filter(Boolean))];
+  const out = [];
+  let coveredLabs = false;
+  (snap.must_not_miss || []).forEach((f) => {
+    const n = resolve(f.refs);
+    if (f.type === "PanicLab") {
+      out.push(n.length ? "What is the latest " + n[0] + " value and when was it resulted?"
+        : "Walk me through the flagged lab result.");
+      coveredLabs = true;
+    } else if (f.type === "DrugDrugInteraction") {
+      out.push(n.length >= 2 ? "Is the patient still on both " + n[0] + " and " + n[1] + "?"
+        : "Are the interacting medications both still current?");
+    } else if (f.type === "DrugAllergyConflict") {
+      out.push(n.length >= 2 ? "Is " + n[0] + " appropriate given the " + n[1] + " allergy?"
+        : "How current are the conflicting medication and allergy?");
+    } else if (f.type === "OpenFollowUp") {
+      out.push("Which follow-ups are still open?");
+    }
+  });
+  if ((snap.unknown_currency || []).length) {
+    out.push("Which medications or allergies have unknown currency?");
+  }
+  if ((snap.unevaluable || []).length) {
+    out.push("What on this chart could not be evaluated?");
+  }
+  if ((snap.new_labs || []).length && !coveredLabs) {
+    out.push("What labs came back since the last visit?");
+  }
+  if (!out.length) {
+    out.push("Anything I should know before I walk in?");
+    out.push("What medications is the patient currently taking?");
+  }
+  return out.slice(0, 3);
+}
+
+function renderSuggestions(snap) {
+  const row = $("suggestions");
+  const q = $("question");
+  row.replaceChildren();
+  if (!snap) {
+    q.placeholder = "Select a patient above to see suggested questions for this chart.";
+    return;
+  }
+  const list = buildSuggestions(snap);
+  q.placeholder = "e.g. " + list[0];
+  row.appendChild(el("span", "label", "Try asking"));
+  list.forEach((text) => {
+    const chip = el("button", "suggest", text);
+    chip.type = "button";
+    chip.addEventListener("click", () => {
+      q.value = text;
+      q.focus();
+    });
+    row.appendChild(chip);
+  });
 }
 
 function el(tag, cls, text) {
@@ -246,7 +323,8 @@ function renderSnapshot(data) {
   if (data.degraded) {
     // Degraded means the chart read itself failed — show ONLY the honest
     // banner, never an empty-quiet rendering standing in for a failed read
-    // (R11).
+    // (R11). No suggestions either: they would imply a chart we don't have.
+    renderSuggestions(null);
     zone.appendChild(el("div", "banner degraded",
       "Unable to load this patient's snapshot right now. " + (data.degraded_reason || "")));
     return;
@@ -254,9 +332,11 @@ function renderSnapshot(data) {
 
   const snap = data.snapshot;
   if (!snap) {
+    renderSuggestions(null);
     zone.appendChild(el("div", "banner error", "No snapshot available for this patient."));
     return;
   }
+  renderSuggestions(snap);
 
   if ((snap.must_not_miss || []).length) {
     const section = el("section", "zone");
@@ -499,10 +579,14 @@ $("patient-select").addEventListener("change", (e) => {
   const opt = e.target.selectedOptions[0];
   priorTurns.length = 0;
   $("out").replaceChildren();
+  // A question drafted for the previous patient must never ride into this
+  // one's turn.
+  $("question").value = "";
   if (!opt || !opt.value) {
     currentPatient = null;
     $("ask").disabled = true;
     $("snapshot").replaceChildren();
+    renderSuggestions(null);
     return;
   }
   currentPatient = { uuid: opt.value, name: opt.dataset.name || "" };
