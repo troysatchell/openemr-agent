@@ -91,32 +91,26 @@ class AuthUtils
         //  whereas essentially no time is taken when the user does not exist. This will place
         //  a dummy hash at $this->dummyHash, which is used by preventTimingAttack() function to
         //  simulate a passwordVerify() run using the same hashing algorithm.
+        // S8 (AUDIT.md): the constructor runs on every login attempt (even
+        // unauthenticated) and must not write to the DB. Read the persisted
+        // timing-defense dummy hash; if it is absent, blank, or stale, compute
+        // an ephemeral one IN MEMORY for this request only. The durable value is
+        // seeded once by a Doctrine migration (db/Migrations), so steady state is
+        // a single read and unauthenticated attempts cannot trigger writes.
         $dummyPassword = "dummy";
         $timing = privQuery("SELECT * FROM `globals` WHERE `gl_name` = 'hidden_auth_dummy_hash'");
-        if (empty($timing)) {
-            // Create and store a new dummy hash globals entry
-            $this->dummyHash = $this->authHashAuth->passwordHash($dummyPassword);
-            privStatement("INSERT INTO `globals` (`gl_name`, `gl_value`) VALUES ('hidden_auth_dummy_hash', ?)", [$this->dummyHash]);
-        } elseif (empty($timing['gl_value'])) {
-            // Create and store a dummy rehash in existing globals entry
-            $this->dummyHash = $this->authHashAuth->passwordHash($dummyPassword);
-            privStatement("UPDATE `globals` SET `gl_value` = ? WHERE `gl_name` = 'hidden_auth_dummy_hash'", [$this->dummyHash]);
+        $storedDummyHash = $timing['gl_value'] ?? '';
+        if (!empty($storedDummyHash) && !$this->authHashAuth->passwordNeedsRehash($storedDummyHash)) {
+            $this->dummyHash = $storedDummyHash;
         } else {
-            // The below line is usually all that will happen in this big block of code
-            $this->dummyHash = $timing['gl_value'];
-            // Ensure the current dummy hash does not need to be rehashed
-            if ($this->authHashAuth->passwordNeedsRehash($timing['gl_value'])) {
-                // Create and store a dummy rehash in existing globals entry
-                $this->dummyHash = $this->authHashAuth->passwordHash($dummyPassword);
-                privStatement("UPDATE `globals` SET `gl_value` = ? WHERE `gl_name` = 'hidden_auth_dummy_hash'", [$this->dummyHash]);
-            }
+            $this->dummyHash = $this->authHashAuth->passwordHash($dummyPassword);
         }
 
+        // S8 (AUDIT.md): normalize a blank password_expiration_days in memory
+        // only; the durable fix is applied by the migration.
         $password_expiration_days = (privQuery("SELECT * FROM `globals` WHERE `gl_name` = 'password_expiration_days' AND `gl_index` = 0")['gl_value'] ?? null);
         if ($password_expiration_days === '') {
             OEGlobalsBag::getInstance()->set('password_expiration_days', 0);
-            privStatement("UPDATE `globals` SET `gl_value` = ? WHERE `globals`.`gl_name` = 'password_expiration_days' AND `globals`.`gl_index` = '0'", ['0']);
-            error_log("Blank global password_expiration_days updated to 0");
         }
     }
 
