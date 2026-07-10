@@ -133,6 +133,27 @@ const CSRF_TOKEN = <?php echo js_escape($csrfToken); ?>;
 const $ = (id) => document.getElementById(id);
 const priorTurns = [];
 let currentPatient = null;
+// Keys of the findings the rendered snapshot already shows, so a turn can
+// collapse identical re-checked findings to one line instead of repeating
+// the cards (DESIGN.md: repetition is information; R13 stays visible).
+let snapshotFindingKeys = new Set();
+let snapshotUnevKeys = new Set();
+
+function findingKey(type, text, refs) {
+  return type + "|" + text + "|" + (refs || []).join(",");
+}
+
+// Working-state helper (DESIGN.md): a busy control swaps its label to the
+// verb in progress — never a bare disable with unchanged text.
+function setWorking(btn, workingLabel) {
+  btn.dataset.idleLabel = btn.dataset.idleLabel || btn.textContent;
+  btn.textContent = workingLabel;
+  btn.disabled = true;
+}
+function setIdle(btn) {
+  if (btn.dataset.idleLabel) btn.textContent = btn.dataset.idleLabel;
+  btn.disabled = false;
+}
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -199,21 +220,28 @@ function renderSchedule(data) {
 async function loadSchedule() {
   const select = $("patient-select");
   const status = $("schedule-status");
+  const refresh = $("refresh");
   status.textContent = "";
   select.disabled = true;
+  select.replaceChildren(el("option", null, "Loading today's schedule…"));
+  setWorking(refresh, "Loading…");
   try {
     const data = await post("schedule", {});
     renderSchedule(data);
   } catch (e) {
+    select.replaceChildren(el("option", null, "Schedule unavailable"));
     status.textContent = "Could not load today's schedule: " + e.message;
   } finally {
     select.disabled = false;
+    setIdle(refresh);
   }
 }
 
 function renderSnapshot(data) {
   const zone = $("snapshot");
   zone.replaceChildren();
+  snapshotFindingKeys = new Set();
+  snapshotUnevKeys = new Set();
 
   if (data.degraded) {
     // Degraded means the chart read itself failed — show ONLY the honest
@@ -234,6 +262,7 @@ function renderSnapshot(data) {
     const section = el("section", "zone");
     section.appendChild(el("h2", null, "Must not miss — detected in code, not by the model"));
     snap.must_not_miss.forEach((f) => {
+      snapshotFindingKeys.add(findingKey(f.type, f.summary, f.refs));
       const item = el("div", "crit-item");
       item.appendChild(el("span", "type", f.type));
       item.appendChild(el("span", "summary", f.summary));
@@ -247,6 +276,7 @@ function renderSnapshot(data) {
     const section = el("section", "zone");
     section.appendChild(el("h2", null, "Could not be evaluated — check manually"));
     snap.unevaluable.forEach((u) => {
+      snapshotUnevKeys.add(findingKey("unev", u.reason, u.refs));
       const item = el("div", "unev-item");
       item.appendChild(el("div", null, u.reason));
       item.appendChild(refChips(u.refs));
@@ -323,16 +353,23 @@ function renderSnapshot(data) {
 
 async function loadSnapshot() {
   const zone = $("snapshot");
+  const select = $("patient-select");
+  const ask = $("ask");
   if (!currentPatient) {
     zone.replaceChildren();
     return;
   }
-  zone.replaceChildren(el("div", "hint", "Loading snapshot…"));
+  zone.replaceChildren(el("div", "hint", "Reading the live chart…"));
+  select.disabled = true;
+  ask.disabled = true;
   try {
     const data = await post("snapshot", { patient_uuid: currentPatient.uuid });
     renderSnapshot(data);
   } catch (e) {
     zone.replaceChildren(el("div", "banner error", "Could not load the snapshot: " + e.message));
+  } finally {
+    select.disabled = false;
+    ask.disabled = !currentPatient;
   }
 }
 
@@ -345,29 +382,53 @@ function render(turn) {
       "Assistant unavailable — the findings below are code-detected and unaffected. " + (turn.degraded_reason || "")));
   }
 
+  // The critical subset is re-detected on every turn (R13). Findings the
+  // snapshot above already shows collapse to one line — repeating identical
+  // cards trains the reader to skip them (DESIGN.md); a NEW finding still
+  // renders full-size.
   if ((turn.must_not_miss || []).length) {
+    const fresh = turn.must_not_miss.filter((f) => !snapshotFindingKeys.has(findingKey(f.type, f.summary, f.refs)));
+    const unchanged = turn.must_not_miss.length - fresh.length;
     const zone = el("section", "zone");
-    zone.appendChild(el("h2", null, "Must not miss — detected in code, not by the model"));
-    turn.must_not_miss.forEach((f) => {
+    zone.appendChild(el("h2", null, fresh.length
+      ? "Must not miss — detected in code, not by the model"
+      : "Must not miss — re-checked this turn"));
+    fresh.forEach((f) => {
       const item = el("div", "crit-item");
       item.appendChild(el("span", "type", f.type));
       item.appendChild(el("span", "summary", f.summary));
       item.appendChild(refChips(f.refs));
       zone.appendChild(item);
     });
+    if (unchanged > 0) {
+      zone.appendChild(el("div", "hint", fresh.length
+        ? unchanged + " earlier finding(s) re-checked — unchanged (shown above)."
+        : "Critical findings re-checked this turn — unchanged (shown in the snapshot above)."));
+    }
     out.appendChild(zone);
   }
 
   if ((turn.unevaluable || []).length) {
-    const zone = el("section", "zone");
-    zone.appendChild(el("h2", null, "Could not be evaluated — check manually"));
-    turn.unevaluable.forEach((u) => {
-      const item = el("div", "unev-item");
-      item.appendChild(el("div", null, u.reason));
-      item.appendChild(refChips(u.refs));
-      zone.appendChild(item);
-    });
-    out.appendChild(zone);
+    const fresh = turn.unevaluable.filter((u) => !snapshotUnevKeys.has(findingKey("unev", u.reason, u.refs)));
+    const unchanged = turn.unevaluable.length - fresh.length;
+    if (fresh.length || unchanged > 0) {
+      const zone = el("section", "zone");
+      zone.appendChild(el("h2", null, fresh.length
+        ? "Could not be evaluated — check manually"
+        : "Uncertainty — re-checked this turn"));
+      fresh.forEach((u) => {
+        const item = el("div", "unev-item");
+        item.appendChild(el("div", null, u.reason));
+        item.appendChild(refChips(u.refs));
+        zone.appendChild(item);
+      });
+      if (unchanged > 0) {
+        zone.appendChild(el("div", "hint", fresh.length
+          ? unchanged + " earlier item(s) re-checked — unchanged (shown above)."
+          : "Uncertainty items re-checked this turn — unchanged (shown in the snapshot above)."));
+      }
+      out.appendChild(zone);
+    }
   }
 
   const grounded = turn.answer ? (turn.answer.grounded || []) : [];
@@ -416,7 +477,8 @@ async function ask() {
     out.replaceChildren(el("div", "banner error", "A question is required."));
     return;
   }
-  btn.disabled = true;
+  setWorking(btn, "Asking…");
+  out.replaceChildren(el("div", "hint", "Re-reading the live chart and grounding the answer — model prose is only shown when it cites a chart record…"));
   try {
     const turn = await post("turn", {
       patient_uuid: currentPatient.uuid,
@@ -429,7 +491,7 @@ async function ask() {
   } catch (e) {
     out.replaceChildren(el("div", "banner error", e.message || "Request failed."));
   } finally {
-    btn.disabled = false;
+    setIdle(btn);
   }
 }
 

@@ -57,6 +57,7 @@ body = json.dumps({
            "user/allergy.read user/allergy.write user/Patient.read user/Observation.read "
            "user/MedicationRequest.read user/AllergyIntolerance.read "
            "user/appointment.write user/facility.read user/user.read "
+           "user/encounter.read user/encounter.write "
            "user/ping.read user/health.read user/ready.read user/turn.write"})
 r = subprocess.run(['curl','-s','-X','POST',f'{base}/oauth2/default/registration',
     '-H','Content-Type: application/json','-d',body], capture_output=True, text=True)
@@ -84,6 +85,7 @@ body = urllib.parse.urlencode({
            'user/medication.read user/medication.write user/allergy.read user/allergy.write '
            'user/Patient.read user/MedicationRequest.read user/AllergyIntolerance.read '
            'user/appointment.write user/facility.read user/user.read '
+           'user/encounter.read user/encounter.write '
            'user/health.read user/ready.read user/turn.write')})
 r = subprocess.run(['curl','-s','-X','POST',f'{base}/oauth2/default/token',
     '-H','Content-Type: application/x-www-form-urlencoded','-d',body],
@@ -217,18 +219,95 @@ else:
 PY
 }
 
-# Seeds today's 3-patient schedule for the resolved provider (reuses Alma
-# Reyes from $STATE/patient.json + 2 new synthetic patients), so the in-EMR
-# panel's "Today's patients" dropdown has something to show.
+# Books the three demo patients onto the provider's calendar for the next
+# DAYS days (default 14, 3 appointments/day) so the demo persists: anyone
+# with the dr.tran login sees a populated "Today's patients" dropdown without
+# running any script. Rerun with DAYS=<more> to extend the horizon.
 schedule() {
-    [ -f "$STATE/schedule.json" ] && { echo "schedule already seeded ($STATE/schedule.json)"; return; }
+    [ -f "$STATE/patients.json" ] || { echo "ERROR: run the clinical step first ('sh copilot-demo.sh clinical')"; exit 1; }
     [ -f "$STATE/provider.json" ] || { echo "ERROR: run the provider step first ('sh copilot-demo.sh provider')"; exit 1; }
-    TODAY="$(date -u +%F)"
-    export TODAY
+    DAYS="${DAYS:-14}"
+    export DAYS
     py <<'PY'
 import json, os, subprocess, sys
+from datetime import date, timedelta
 base, state = os.environ['BASE'], os.environ['STATE']
-today = os.environ['TODAY']
+days = int(os.environ['DAYS'])
+tok = json.load(open(f'{state}/token.json'))['access_token']
+provider_id = json.load(open(f'{state}/provider.json'))['id']
+patients = json.load(open(f'{state}/patients.json'))
+
+def call(method, path, payload=None):
+    args = ['curl', '-s', '-X', method, f'{base}/apis/default{path}',
+            '-H', f'Authorization: Bearer {tok}', '-H', 'Content-Type: application/json']
+    if payload is not None:
+        args += ['-d', json.dumps(payload)]
+    return json.loads(subprocess.run(args, capture_output=True, text=True).stdout)
+
+facilities = call('GET', '/api/facility')
+frows = facilities.get('data') or []
+if isinstance(frows, dict):
+    frows = [frows]
+if not frows:
+    sys.exit("ERROR: GET /api/facility returned no rows — create a facility in the UI first")
+facility_id = frows[0]['id']
+
+# Idempotent top-up: schedule.json records the last day already booked, so a
+# rerun extends the horizon instead of double-booking. (Migrates the legacy
+# single-day {'day': ...} format.)
+start = date.today()
+if os.path.exists(f'{state}/schedule.json'):
+    sched = json.load(open(f'{state}/schedule.json'))
+    prev = sched.get('seeded_through') or sched.get('day')
+    if prev:
+        start = max(start, date.fromisoformat(prev) + timedelta(days=1))
+end = date.today() + timedelta(days=days - 1)
+if start > end:
+    print(f"schedule already seeded through {end.isoformat()} — rerun with DAYS=<more> to extend")
+    sys.exit(0)
+
+count = 0
+day = start
+while day <= end:
+    for patient in patients:
+        appt = {
+            'pc_catid': 9,
+            'pc_title': 'Office Visit',
+            'pc_duration': 900,
+            'pc_hometext': 'copilot demo',
+            'pc_apptstatus': '-',
+            'pc_eventDate': day.isoformat(),
+            'pc_startTime': patient['slot'],
+            'pc_facility': facility_id,
+            'pc_billing_location': facility_id,
+            'pc_aid': provider_id,
+        }
+        d = call('POST', f"/api/patient/{patient['pid']}/appointment", appt)
+        if d.get('id') is None:
+            sys.exit(f"ERROR: appointment creation failed for pid={patient['pid']} on {day}: {d}")
+        count += 1
+    day += timedelta(days=1)
+
+open(f'{state}/schedule.json', 'w').write(json.dumps({'seeded_through': end.isoformat()}))
+print(f"booked {count} appointments ({start.isoformat()} .. {end.isoformat()}, 3/day) for provider id={provider_id}")
+PY
+}
+
+# Per-patient clinical showcases so every panel interaction demonstrates a
+# different part of the system (founder ask, 2026-07-09). Resolves-or-creates
+# the three demo patients (idempotent), then seeds:
+#   Reyes    — warfarin+aspirin (DDI card) + last visit 21d ago
+#   Mendoza  — amoxicillin + CODED penicillin allergy (drug-allergy card;
+#              title-only allergies read as honest "Unknown" — Wave-3 note)
+#              + last visit 14d ago
+#   Park     — lisinopril only + last visit 7d ago (earned-quiet showcase)
+# Labs are seeded separately ('labs' step) — they have no REST write surface.
+clinical() {
+    [ -f "$STATE/provider.json" ] || { echo "ERROR: run the provider step first ('sh copilot-demo.sh provider')"; exit 1; }
+    py <<'PY'
+import json, os, subprocess, sys, urllib.parse
+from datetime import date, timedelta
+base, state = os.environ['BASE'], os.environ['STATE']
 tok = json.load(open(f'{state}/token.json'))['access_token']
 provider_id = json.load(open(f'{state}/provider.json'))['id']
 
@@ -239,49 +318,166 @@ def call(method, path, payload=None):
         args += ['-d', json.dumps(payload)]
     return json.loads(subprocess.run(args, capture_output=True, text=True).stdout)
 
-patients = [json.load(open(f'{state}/patient.json'))]
-for fname, lname, dob, sex in [
-    ('Rafael', 'Mendoza', '1958-11-02', 'Male'),
-    ('June', 'Park', '1979-06-21', 'Female'),
-]:
-    d = call('POST', '/api/patient', {'fname': fname, 'lname': lname, 'DOB': dob, 'sex': sex})
-    pid, uuid = d['data']['pid'], d['data']['uuid']
-    print(f"patient created: {fname} {lname} pid={pid} uuid={uuid}")
-    patients.append({'pid': pid, 'uuid': uuid})
+def find_patient(fname, lname):
+    q = urllib.parse.urlencode({'fname': fname, 'lname': lname})
+    d = call('GET', f'/api/patient?{q}')
+    rows = d.get('data') or []
+    if isinstance(rows, dict):
+        rows = [rows]
+    for row in rows:
+        if isinstance(row, dict) \
+                and str(row.get('fname', '')).lower() == fname.lower() \
+                and str(row.get('lname', '')).lower() == lname.lower():
+            return {'pid': int(row['pid']), 'uuid': row['uuid']}
+    return None
+
+SPEC = [
+    {'fname': 'Alma', 'lname': 'Reyes', 'DOB': '1961-03-14', 'sex': 'Female', 'slot': '09:00'},
+    {'fname': 'Rafael', 'lname': 'Mendoza', 'DOB': '1958-11-02', 'sex': 'Male', 'slot': '09:30'},
+    {'fname': 'June', 'lname': 'Park', 'DOB': '1979-06-21', 'sex': 'Female', 'slot': '10:15'},
+]
+patients = []
+for spec in SPEC:
+    p = find_patient(spec['fname'], spec['lname'])
+    if p is None:
+        d = call('POST', '/api/patient',
+                 {'fname': spec['fname'], 'lname': spec['lname'], 'DOB': spec['DOB'], 'sex': spec['sex']})
+        p = {'pid': d['data']['pid'], 'uuid': d['data']['uuid']}
+        print(f"patient created: {spec['fname']} {spec['lname']} pid={p['pid']}")
+    else:
+        print(f"patient exists:  {spec['fname']} {spec['lname']} pid={p['pid']}")
+    p.update({'fname': spec['fname'], 'lname': spec['lname'], 'slot': spec['slot']})
+    patients.append(p)
+open(f'{state}/patients.json', 'w').write(json.dumps(patients))
+
+if os.path.exists(f'{state}/clinical.json'):
+    print('clinical showcases already seeded (~/.copilot-demo/clinical.json)')
+    sys.exit(0)
 
 facilities = call('GET', '/api/facility')
 frows = facilities.get('data') or []
 if isinstance(frows, dict):
     frows = [frows]
-if not frows:
-    sys.exit("ERROR: GET /api/facility returned no rows — create a facility in the UI first")
-facility_id = frows[0]['id']
-print(f"facility id={facility_id}")
+fid, fname_ = frows[0]['id'], frows[0].get('name', '')
 
-times = ['09:00', '09:30', '10:15']
-eids = []
-for patient, start_time in zip(patients, times):
-    appt = {
-        'pc_catid': 9,
-        'pc_title': 'Office Visit',
-        'pc_duration': 900,
-        'pc_hometext': 'copilot demo',
-        'pc_apptstatus': '-',
-        'pc_eventDate': today,
-        'pc_startTime': start_time,
-        'pc_facility': facility_id,
-        'pc_billing_location': facility_id,
-        'pc_aid': provider_id,
-    }
-    d = call('POST', f"/api/patient/{patient['pid']}/appointment", appt)
-    eid = d.get('id')
-    if eid is None:
-        sys.exit(f"ERROR: appointment creation failed for pid={patient['pid']}: {d}")
-    print(f"appointment created: pid={patient['pid']} {start_time} eid={eid}")
-    eids.append(eid)
+def encounter(p, days_ago, reason):
+    day = (date.today() - timedelta(days=days_ago)).isoformat()
+    d = call('POST', f"/api/patient/{p['uuid']}/encounter", {
+        'date': day, 'reason': reason, 'facility': fname_, 'pc_catid': '5',
+        'facility_id': str(fid), 'billing_facility': str(fid), 'sensitivity': 'normal',
+        'referral_source': '', 'pos_code': '0', 'provider_id': str(provider_id),
+        'class_code': 'AMB'})
+    if not (d.get('data') or {}).get('encounter') and not (d.get('data') or {}).get('id'):
+        print(f"WARNING: encounter for pid={p['pid']} may have failed: {d}")
+    else:
+        print(f"  encounter {day} — {p['lname']} ({reason})")
 
-open(f'{state}/schedule.json', 'w').write(json.dumps({'day': today, 'eids': eids}))
+reyes, mendoza, park = patients
+
+# Reyes already carries warfarin+aspirin+amoxicillin and the deliberately
+# title-only Penicillin allergy from the seed step (honest-"Unknown" showcase).
+encounter(reyes, 21, 'Hypertension follow-up')
+
+med = call('POST', f"/api/patient/{mendoza['pid']}/medication",
+           {'title': 'Amoxicillin 875mg Tablet', 'begdate': (date.today() - timedelta(days=10)).isoformat() + ' 00:00:00'})
+print(f"  med: Amoxicillin 875mg Tablet — Mendoza ({(med.get('data') or {}) and 'ok'})")
+alg = call('POST', f"/api/patient/{mendoza['uuid']}/allergy",
+           {'title': 'Penicillin', 'diagnosis': 'RXNORM:70618', 'begdate': '2019-05-01'})
+print(f"  allergy: Penicillin (CODED RXNORM:70618) — Mendoza ({(alg.get('data') or {}) and 'ok'})")
+encounter(mendoza, 14, 'URI, resolved')
+
+med = call('POST', f"/api/patient/{park['pid']}/medication",
+           {'title': 'Lisinopril 10mg Tablet', 'begdate': (date.today() - timedelta(days=90)).isoformat() + ' 00:00:00'})
+print(f"  med: Lisinopril 10mg Tablet — Park ({(med.get('data') or {}) and 'ok'})")
+encounter(park, 7, 'Annual physical')
+
+open(f'{state}/clinical.json', 'w').write(json.dumps({'seeded': date.today().isoformat()}))
+print('clinical showcases seeded')
 PY
+}
+
+# Synthetic lab results. Labs have NO REST/FHIR write surface in OpenEMR
+# (procedure routes are GET-only, FHIR Observation is read-only), so this is
+# the one seed step that writes SQL directly — setup tooling against the
+# procedure_order/_report/_result chain the FHIR read path consumes; the
+# module itself never touches these tables. Rows are tagged
+# control_id='copilot-demo' and the generated SQL first deletes prior tagged
+# rows for these patients, so reruns converge. Executes via 'railway ssh'
+# when available (uses the container's MYSQL_* env), else prints the file to
+# run by hand.
+labs() {
+    [ -f "$STATE/patients.json" ] || { echo "ERROR: run the clinical step first ('sh copilot-demo.sh clinical')"; exit 1; }
+    py <<'PY'
+import json, os
+from datetime import date, timedelta
+state = os.environ['STATE']
+provider_id = json.load(open(f'{state}/provider.json'))['id']
+patients = {p['lname']: p for p in json.load(open(f'{state}/patients.json'))}
+today = date.today()
+
+def dt(days_ago, time):
+    return f"{(today - timedelta(days=days_ago)).isoformat()} {time}"
+
+# lname, analyte, loinc, value, units, range, abnormal, resulted (None = undated)
+LABS = [
+    # Reyes: panic K AFTER her last visit (new lab + panic card) and an older
+    # normal sodium BEFORE it (exercises the not-new exclusion).
+    ('Reyes', 'Potassium', '2823-3', '6.8', 'mmol/L', '3.5-5.1', 'yes', dt(2, '07:30:00')),
+    ('Reyes', 'Sodium', '2951-2', '141', 'mmol/L', '136-145', '', dt(35, '08:00:00')),
+    # Mendoza: an UNDATED result — cannot be placed against his last visit,
+    # surfaces as an honest unevaluable item (D0/D6).
+    ('Mendoza', 'Vitamin D, 25-Hydroxy', '1989-3', '31', 'ng/mL', '30-100', '', None),
+    # Park: one normal result BEFORE her last visit — nothing new, nothing
+    # unevaluable: the earned-quiet banner showcase.
+    ('Park', 'Hemoglobin', '718-7', '13.8', 'g/dL', '12.0-15.5', '', dt(30, '09:00:00')),
+]
+
+pids = sorted({p['pid'] for p in patients.values()})
+sql = ["-- copilot-demo synthetic labs (setup tooling; module never writes)",
+       "-- rerunnable: deletes prior copilot-demo rows for these patients first",
+       f"DELETE presult, preport, pcode, porder FROM procedure_order porder"
+       f" LEFT JOIN procedure_report preport ON preport.procedure_order_id = porder.procedure_order_id"
+       f" LEFT JOIN procedure_result presult ON presult.procedure_report_id = preport.procedure_report_id"
+       f" LEFT JOIN procedure_order_code pcode ON pcode.procedure_order_id = porder.procedure_order_id"
+       f" WHERE porder.control_id = 'copilot-demo' AND porder.patient_id IN ({','.join(map(str, pids))});"]
+for lname, analyte, loinc, value, units, rng, abnormal, resulted in LABS:
+    pid = patients[lname]['pid']
+    ordered = (resulted or dt(3, '08:00:00')).split(' ')[0]
+    report_dt = f"'{resulted}'" if resulted else 'NULL'
+    sql.append(
+        f"INSERT INTO procedure_order (provider_id, patient_id, encounter_id, date_ordered, order_status,"
+        f" activity, procedure_order_type, order_priority, control_id, specimen_type, specimen_location,"
+        f" specimen_volume, clinical_hx, order_abn)"
+        f" VALUES ({provider_id}, {pid}, 0, '{ordered}', 'complete', 1, 'laboratory_test', 'normal',"
+        f" 'copilot-demo', '', '', '', '', 'not_required');")
+    sql.append("SET @oid = LAST_INSERT_ID();")
+    sql.append(
+        f"INSERT INTO procedure_order_code (procedure_order_id, procedure_order_seq, procedure_code,"
+        f" procedure_name, procedure_order_title) VALUES (@oid, 1, '{loinc}', '{analyte}', 'laboratory_test');")
+    sql.append(
+        f"INSERT INTO procedure_report (procedure_order_id, procedure_order_seq, date_collected, date_report,"
+        f" report_status, review_status, source, specimen_num)"
+        f" VALUES (@oid, 1, {report_dt}, {report_dt}, 'final', 'reviewed', 0, '');")
+    sql.append("SET @rid = LAST_INSERT_ID();")
+    sql.append(
+        f"INSERT INTO procedure_result (procedure_report_id, result_data_type, result_code, result_text, date,"
+        f" facility, units, result, `range`, abnormal, document_id, result_status)"
+        f" VALUES (@rid, 'N', '{loinc}', '{analyte}', {report_dt}, '', '{units}', '{value}', '{rng}',"
+        f" '{abnormal}', 0, 'final');")
+
+open(f'{state}/seed-labs.sql', 'w').write('\n'.join(sql) + '\n')
+print(f"generated {state}/seed-labs.sql ({len(LABS)} results)")
+PY
+    if command -v railway >/dev/null 2>&1; then
+        b64="$(base64 < "$STATE/seed-labs.sql" | tr -d '\n')"
+        echo "applying labs via railway ssh (service openemr)..."
+        railway ssh -s openemr sh -c "'echo $b64 | base64 -d | mariadb -h\"\$MYSQL_HOST\" -P\"\$MYSQL_PORT\" -u\"\$MYSQL_USER\" -p\"\$MYSQL_PASS\" \"\$MYSQL_DATABASE\"'" \
+            && echo "labs applied" \
+            || { echo "ERROR: railway ssh apply failed — run $STATE/seed-labs.sql against the DB by hand"; exit 1; }
+    else
+        echo "railway CLI not found — apply $STATE/seed-labs.sql against the OpenEMR database yourself, e.g.:"
+        echo "  docker compose -f docker/development-easy/docker-compose.yml exec -T openemr sh -c 'mariadb -h mysql -u openemr -popenemr openemr' < $STATE/seed-labs.sql"
+    fi
 }
 
 turn() {
@@ -318,13 +514,15 @@ show() {
 }
 
 case "$STEP" in
-    all)      register; token; seed; provider; schedule; turn; show ;;
+    all)      register; token; seed; provider; clinical; schedule; labs; turn; show ;;
     register) register ;;
     token)    token; show ;;
     seed)     token 2>/dev/null || true; seed ;;
     provider) token 2>/dev/null || true; provider ;;
+    clinical) token 2>/dev/null || true; clinical ;;
     schedule) token 2>/dev/null || true; schedule ;;
+    labs)     labs ;;
     turn)     turn ;;
     show)     show ;;
-    *) echo "usage: sh copilot-demo.sh [all|register|token|seed|provider|schedule|turn|show]"; exit 1 ;;
+    *) echo "usage: sh copilot-demo.sh [all|register|token|seed|provider|clinical|schedule|labs|turn|show]"; exit 1 ;;
 esac

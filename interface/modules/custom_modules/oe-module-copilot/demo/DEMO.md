@@ -39,34 +39,52 @@ authenticates as whichever OpenEMR user is logged into the EMR session and
 drives its own module page (`public/index.php`) via a same-origin AJAX
 endpoint (`public/ajax.php`), CSRF-protected like every other module page.
 
-0. **Check your OAuth client's scopes first.** The provider/schedule steps
-   need `user/user.read`, `user/appointment.write`, and `user/facility.read`.
-   A client's scope grant is fixed at registration, so if
-   `~/.copilot-demo/client.json` was registered before those scopes were
-   added to this script (symptom: `provider` reports `rows_seen=0`, or
-   `schedule` fails creating appointments), re-register once:
+Seeding is **one-time**: appointments are booked for the next 14 days
+(3/day; `DAYS=<n>` extends), so anyone with the `dr.tran` login — program
+administrators included — just logs in and demos. No script needed after the
+initial seed.
+
+0. **Check your OAuth client's scopes first.** The seed steps need
+   `user/user.read`, `user/appointment.write`, `user/facility.read`, and
+   `user/encounter.read`/`user/encounter.write`. A client's scope grant is
+   fixed at registration, so if `~/.copilot-demo/client.json` predates any
+   of them (symptom: `provider` reports `rows_seen=0`, or clinical/schedule
+   calls fail), re-register once:
    ```bash
    rm ~/.copilot-demo/client.json
    sh copilot-demo.sh register   # pauses: enable the NEW client in Admin → System → API Clients
    sh copilot-demo.sh token
    ```
-1. **Seed the physician and today's schedule** (one-time):
+1. **Seed everything** (one-time):
    ```bash
    cd interface/modules/custom_modules/oe-module-copilot/demo
-   sh copilot-demo.sh provider
-   sh copilot-demo.sh schedule
+   sh copilot-demo.sh provider   # resolves dr.tran; only pauses if she must be created
+   sh copilot-demo.sh clinical   # per-patient meds/allergies/encounters (showcases below)
+   sh copilot-demo.sh schedule   # 3 appointments/day for the next 14 days
+   sh copilot-demo.sh labs       # synthetic lab results (direct SQL — see note below)
    ```
-   `provider` first tries to resolve an existing `dr.tran` via
-   `GET /api/user` — if she already exists it records her numeric id and
-   never pauses (and `DR_PASS` is not needed). Only when she can't be found
-   does it pause for you to create her (Administration → Users → New User:
-   username `dr.tran`, a password you choose — export it as `DR_PASS='<pick
-   a password>'` so the pause branch runs; name Ellis Tran; **Provider** and
-   **Calendar** checked; Access Control **Physicians**), with a manual-id
-   fallback if resolution still fails. `schedule` seeds two more synthetic
-   patients (Rafael Mendoza, June Park) alongside the existing Alma Reyes
-   and books all three onto `dr.tran`'s calendar for today at 09:00, 09:30,
-   and 10:15.
+   `provider` first tries to resolve an existing `dr.tran` via `GET
+   /api/user` — if she exists it records her id and never pauses (no
+   `DR_PASS` needed). Only when she can't be found does it pause for you to
+   create her (Administration → Users → New User: username `dr.tran`, a
+   password you choose — export it as `DR_PASS='<pick a password>'`; name
+   Ellis Tran; **Provider** and **Calendar** checked; Access Control
+   **Physicians**). `labs` writes SQL directly because OpenEMR has no
+   REST/FHIR write surface for lab results — it is setup tooling against
+   the same tables the FHIR read path consumes (rows tagged
+   `control_id='copilot-demo'`, rerun-safe); the module itself never writes.
+
+   **Each patient showcases a different part of the system:**
+
+   | Patient (slot) | What their chart demonstrates |
+   |---|---|
+   | **Alma Reyes** (09:00) | Panic-lab card (K 6.8 after her last visit) · drug–drug interaction (warfarin + aspirin) · "new labs since last visit" delta incl. the not-new exclusion (old sodium) · honest "Unknown" allergy (deliberately title-only) |
+   | **Rafael Mendoza** (09:30) | Drug–allergy conflict (amoxicillin × CODED penicillin allergy) · honest unevaluable item (an undated lab that cannot be placed against his last visit) |
+   | **June Park** (10:15) | Earned quiet: benign med, normal pre-visit lab, known last visit → the explicit "silence is a checked result" banner, never a blank |
+
+   Asking a follow-up question on any of them then demonstrates the turn
+   path: grounded claims with citations, re-checked (not re-shouted)
+   critical findings, honest degradation if the model is unavailable.
 2. **Log in to OpenEMR as `dr.tran`**.
 3. Open the **Co-Pilot** tab. Placement depends on the user's ACLs: admin
    sees it right after **Modules**; a Physicians-group user like dr.tran has
