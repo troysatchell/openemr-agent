@@ -200,7 +200,15 @@ class Kernel
      */
     public function isDev()
     {
-        return (($_ENV['OPENEMR__ENVIRONMENT'] ?? '') === 'dev') ? true : false;
+        // S9/S7 (AUDIT.md): fall back to getenv(). Under a variables_order
+        // without 'E', PHP does not populate $_ENV from the OS environment, so a
+        // $_ENV-only check silently returns false even when OPENEMR__ENVIRONMENT
+        // is set. getenv() reads the real process environment regardless.
+        $environment = $_ENV['OPENEMR__ENVIRONMENT'] ?? null;
+        if (!is_string($environment)) {
+            $environment = getenv('OPENEMR__ENVIRONMENT');
+        }
+        return $environment === 'dev';
     }
 
     /**
