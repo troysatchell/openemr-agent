@@ -25,6 +25,24 @@ if (PHP_SAPI !== 'cli') {
 
 require_once __DIR__ . '/../../../../../vendor/autoload.php';
 
+// The module's PSR-4 mapping lives in the root composer.json's autoload-dev,
+// which a production build (composer install --no-dev) drops — so on the
+// deployed stack Composer's autoloader alone cannot find the module classes.
+// The web entry points register the namespace at runtime via
+// ModulesClassLoader (see openemr.bootstrap.php); this CLI does the same,
+// self-contained, so the dashboard runs identically in dev and on prod.
+spl_autoload_register(static function (string $class): void {
+    $prefix = 'OpenEMR\\Modules\\Copilot\\';
+    if (!str_starts_with($class, $prefix)) {
+        return;
+    }
+    $relative = substr($class, strlen($prefix));
+    $file = __DIR__ . '/../src/' . str_replace('\\', '/', $relative) . '.php';
+    if (is_file($file)) {
+        require $file;
+    }
+});
+
 $path = $argv[1] ?? (sys_get_temp_dir() . '/copilot-trace.jsonl');
 if (!is_readable($path)) {
     fwrite(STDERR, sprintf("Trace file not readable: %s\n", $path));
