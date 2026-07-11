@@ -35,9 +35,9 @@ final class ChartSnapshotSynthesizer
     {
         return new ChartSnapshot(
             $this->collapseMedications($medications),
-            array_values($labs),
+            $labs,
             $this->collapseAllergies($allergies),
-            array_values($followUps),
+            $followUps,
         );
     }
 

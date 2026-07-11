@@ -36,7 +36,7 @@ final readonly class ReadinessCheck
         }
 
         foreach (array_keys($probes) as $name) {
-            if (!is_string($name) || trim($name) === '') {
+            if (trim((string) $name) === '') {
                 throw new \DomainException('ReadinessCheck probe names must be non-blank');
             }
         }
@@ -50,10 +50,17 @@ final readonly class ReadinessCheck
         foreach ($this->probes as $name => $probe) {
             try {
                 $checks[$name] = $probe();
-            } catch (\Throwable) {
-                // An unreachable dependency is exactly what readiness exists
-                // to surface — never a crashed /ready endpoint.
-                $checks[$name] = false;
+            } catch (\Throwable $e) {
+                // A dependency failure is exactly what readiness exists to
+                // surface: the probe is marked unhealthy, never a crashed
+                // /ready endpoint. A programming \Error / \ErrorException is a
+                // bug, not a dependency outage, so it is re-raised to the global
+                // handler rather than masked as "unhealthy".
+                if (!($e instanceof \Error) && !($e instanceof \ErrorException)) {
+                    $checks[$name] = false;
+                    continue;
+                }
+                throw $e;
             }
         }
 

@@ -53,7 +53,7 @@ use Psr\Clock\ClockInterface;
 final readonly class SnapshotEndpoint
 {
     /**
-     * @param \Closure $lastVisitResolver Contract:
+     * @param \Closure(int): ?\DateTimeImmutable $lastVisitResolver Contract:
      *        (int $pid): ?\DateTimeImmutable.
      */
     public function __construct(
@@ -137,12 +137,12 @@ final readonly class SnapshotEndpoint
      *     patient: array{pid: int, uuid: ?string, first_name: ?string, last_name: ?string, dob: ?string, sex: ?string},
      *     quiet: bool,
      *     changes_basis: string,
-     *     must_not_miss: list<array{type: string, summary: string, refs: list<string>}>,
-     *     unevaluable: list<array{reason: string, refs: list<string>}>,
-     *     unknown_currency: list<array{kind: string, name: string, refs: list<string>}>,
-     *     new_labs: list<array{analyte: string, value: ?float, unit: ?string, resulted_at: ?string, refs: list<string>}>,
-     *     current_medications: list<array{name: string, refs: list<string>}>,
-     *     current_allergies: list<array{substance: string, refs: list<string>}>,
+     *     must_not_miss: list<array{type: string, summary: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *     unevaluable: list<array{reason: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *     unknown_currency: list<array{kind: string, name: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *     new_labs: list<array{analyte: string, value: ?float, unit: ?string, resulted_at: ?string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *     current_medications: list<array{name: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
+     *     current_allergies: list<array{substance: string, refs: list<array{token: string, kind: string, label: string|null}>}>,
      * }
      */
     private function shapeSnapshot(GlanceableSnapshot $snapshot, CitationIndex $citations): array

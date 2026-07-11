@@ -32,7 +32,7 @@ use Psr\Clock\ClockInterface;
 final readonly class TodayScheduleEndpoint
 {
     /**
-     * @param \Closure $appointmentsReader Contract:
+     * @param \Closure(int, string): list<array<string, mixed>> $appointmentsReader Contract:
      *        (int $providerId, string $day): list<array<string, mixed>> —
      *        rows use AppointmentService::search key names: 'pid',
      *        'puuid', 'fname', 'lname', 'pc_startTime', 'pc_apptstatus'.
@@ -64,10 +64,7 @@ final readonly class TodayScheduleEndpoint
         $reader = $this->appointmentsReader;
         $rows = $reader($physician->userId, $day);
 
-        $appointments = array_map(
-            fn (array $row): array => $this->shapeRow($row),
-            $rows,
-        );
+        $appointments = array_map($this->shapeRow(...), $rows);
 
         usort($appointments, static function (array $a, array $b): int {
             if ($a['time'] === $b['time']) {
