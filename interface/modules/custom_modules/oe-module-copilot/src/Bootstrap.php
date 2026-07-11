@@ -29,6 +29,7 @@ use OpenEMR\Modules\Copilot\Audit\EventAuditDisclosureLogger;
 use OpenEMR\Modules\Copilot\Chart\ChartReader;
 use OpenEMR\Modules\Copilot\Chart\FhirChartMapper;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirGateway;
+use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirServiceFactory;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
 use OpenEMR\Modules\Copilot\Llm\AnthropicLlmClient;
@@ -228,7 +229,7 @@ class Bootstrap
         };
 
         return new ReadThroughChartSnapshotProvider(
-            new ChartReader(new OpenEmrFhirGateway()),
+            new ChartReader(new OpenEmrFhirGateway(new OpenEmrFhirServiceFactory())),
             new FhirChartMapper(),
             new ChartSnapshotSynthesizer(),
             $pidResolver,

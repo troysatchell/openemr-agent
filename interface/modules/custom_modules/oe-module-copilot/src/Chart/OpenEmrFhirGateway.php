@@ -3,10 +3,10 @@
 /**
  * OpenEMR-backed FhirReadGateway: thin adapter over the FHIR service layer (T5).
  *
- * Instantiates the matching FHIR service per resource type and calls
- * getAll() — the same path the FHIR REST controllers use (see
- * src/RestControllers/FHIR/FhirPatientRestController.php and
- * src/Services/FHIR/FhirServiceBase.php getAll()) — so every read flows
+ * Obtains the matching FHIR service per resource type from the injected
+ * FhirServiceFactory and calls getAll() — the same path the FHIR REST
+ * controllers use (see src/RestControllers/FHIR/FhirPatientRestController.php
+ * and src/Services/FHIR/FhirServiceBase.php getAll()) — so every read flows
  * through the best-guarded surface: no raw SQL, no legacy-table reads, no
  * $ignoreAuth, no service account (S1/S4/S5/S6).
  *
@@ -16,8 +16,10 @@
  * PhysicianContext parameter makes an anonymous call site unrepresentable at
  * the type level. The adapter performs no auth decisions and no writes.
  *
- * DB-backed and intentionally NOT covered by the isolated suite — verified
- * by php -l and code review only (ticket T5).
+ * Pipeline logic is covered by the isolated contract suite via a stubbed
+ * factory (tests/Tests/Isolated/Copilot/Chart/OpenEmrFhirGatewayTest.php);
+ * only OpenEmrFhirServiceFactory's real service constructions need a live
+ * stack (ticket T5).
  *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
@@ -30,16 +32,14 @@ declare(strict_types=1);
 
 namespace OpenEMR\Modules\Copilot\Chart;
 
-use OpenEMR\Services\FHIR\FhirAllergyIntoleranceService;
-use OpenEMR\Services\FHIR\FhirConditionService;
-use OpenEMR\Services\FHIR\FhirMedicationRequestService;
-use OpenEMR\Services\FHIR\FhirObservationService;
-use OpenEMR\Services\FHIR\FhirPatientService;
-use OpenEMR\Services\FHIR\FhirServiceBase;
 use OpenEMR\Validators\ProcessingResult;
 
 final class OpenEmrFhirGateway implements FhirReadGateway
 {
+    public function __construct(private readonly FhirServiceFactory $serviceFactory)
+    {
+    }
+
     /**
      * @param array<string, mixed> $searchParams
      * @return list<array<string, mixed>>
@@ -58,7 +58,9 @@ final class OpenEmrFhirGateway implements FhirReadGateway
             );
         }
 
-        $service = $this->createService($resourceType);
+        // Outside the try: an unsupported type is a caller bug and must
+        // surface as InvalidArgumentException, not a wrapped read failure.
+        $service = $this->serviceFactory->create($resourceType);
 
         try {
             $result = $service->getAll($searchParams);
@@ -87,20 +89,6 @@ final class OpenEmrFhirGateway implements FhirReadGateway
         }
 
         return $resources;
-    }
-
-    private function createService(string $resourceType): FhirServiceBase
-    {
-        return match ($resourceType) {
-            'Patient' => new FhirPatientService(),
-            'MedicationRequest' => new FhirMedicationRequestService(),
-            'Observation' => new FhirObservationService(),
-            'AllergyIntolerance' => new FhirAllergyIntoleranceService(),
-            'Condition' => new FhirConditionService(),
-            default => throw new \InvalidArgumentException(
-                sprintf('Unsupported FHIR resource type for chart reads: %s', $resourceType)
-            ),
-        };
     }
 
     /**
