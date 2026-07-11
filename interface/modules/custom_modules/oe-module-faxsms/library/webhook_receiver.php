@@ -37,6 +37,54 @@ if (empty($_GET['site'])) {
 // Capture raw input first (can only be read once)
 $rawInput = file_get_contents('php://input');
 
+// SEC-101: verify inbound webhook authenticity before trusting any input.
+// SignalWire's compatibility API signs each request with X-Twilio-Signature,
+// keyed by the project auth token. Reject anything unsigned or unverifiable —
+// including when no signing token is configured — before any oe_faxsms_queue
+// write or media fetch. Fails closed: a read outage or misconfiguration must
+// never let a forged fax through.
+$signalWireCredentials = QueryUtils::querySingleRow(
+    "SELECT credentials FROM module_faxsms_credentials WHERE vendor = ? AND auth_user = 0",
+    ['_signalwire']
+);
+$signingToken = '';
+if (is_array($signalWireCredentials)) {
+    $encryptedCredentials = $signalWireCredentials['credentials'] ?? null;
+    if (is_string($encryptedCredentials) && $encryptedCredentials !== '') {
+        $decryptedCredentials = ServiceContainer::getCrypto()->decryptFromDatabase($encryptedCredentials);
+        if ($decryptedCredentials !== '') {
+            $parsedCredentials = json_decode($decryptedCredentials, true);
+            $apiToken = is_array($parsedCredentials) ? ($parsedCredentials['api_token'] ?? null) : null;
+            if (is_string($apiToken)) {
+                $signingToken = $apiToken;
+            }
+        }
+    }
+}
+
+$requestSignature = filter_input(INPUT_SERVER, 'HTTP_X_TWILIO_SIGNATURE');
+$requestSignature = is_string($requestSignature) ? $requestSignature : '';
+$requestContentType = filter_input(INPUT_SERVER, 'CONTENT_TYPE');
+$isJsonBody = is_string($requestContentType) && str_contains($requestContentType, 'application/json');
+$signaturePayload = $isJsonBody
+    ? (is_string($rawInput) ? $rawInput : '')
+    : (filter_input_array(INPUT_POST) ?: []);
+
+if (
+    !SignalWireWebhookValidator::verifySignature(
+        $requestSignature,
+        SignalWireWebhookValidator::buildRequestUrl(filter_input_array(INPUT_SERVER) ?: []),
+        $signaturePayload,
+        $signingToken
+    )
+) {
+    ServiceContainer::getLogger()->warning(
+        'SignalWire webhook: signature verification failed or signing token not configured'
+    );
+    http_response_code(403);
+    exit('Forbidden');
+}
+
 /**
  * Download fax media from SignalWire and store using FaxDocumentService
  *

@@ -512,6 +512,18 @@ class BackgroundServiceRunner
      */
     protected function executeService(array $service): void
     {
+        $function = $service['function'];
+        // S6 (AUDIT.md): the callable name comes from a DB row; only shipped,
+        // allow-listed functions may run, so table-write access (rogue admin or
+        // SQL injection elsewhere) cannot become arbitrary code execution.
+        if (!BackgroundServiceCallableAllowlist::isAllowed($function)) {
+            $this->logger->warning('Refusing to run non-allow-listed background service callable', [
+                'service' => $service['name'],
+                'callable' => $function,
+            ]);
+            return;
+        }
+
         $requireOnce = $service['require_once'];
         if ($requireOnce !== null && $requireOnce !== '') {
             $projectDir = OEGlobalsBag::getInstance()->getProjectDir();
@@ -526,7 +538,6 @@ class BackgroundServiceRunner
             require_once($resolvedPath);
         }
 
-        $function = $service['function'];
         if (!function_exists($function)) {
             throw new \RuntimeException(sprintf(
                 'Background service "%s" is misconfigured: function "%s" does not exist.',

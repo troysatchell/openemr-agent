@@ -181,7 +181,12 @@ class TurnEndpointTest extends TestCase
         $this->assertIsArray($result['answer']);
         $this->assertCount(1, $result['answer']['grounded']);
         $this->assertSame('On warfarin.', $result['answer']['grounded'][0]['text']);
-        $this->assertSame(['lists:med-warf'], $result['answer']['grounded'][0]['refs']);
+        // A grounded claim's citation is the exact token PLUS the readable
+        // kind + record label, labelled from the same chart (R6/R10).
+        $this->assertSame(
+            [['token' => 'lists:med-warf', 'kind' => 'Medication', 'label' => 'Warfarin 5mg Tablet']],
+            $result['answer']['grounded'][0]['refs'],
+        );
         $this->assertCount(1, $result['answer']['rejected']);
         $this->assertSame(
             ['text' => 'Cholesterol is well controlled.'],

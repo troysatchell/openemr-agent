@@ -58,6 +58,7 @@ use OpenEMR\Modules\Copilot\Synthesis\FollowUpEntry;
 use OpenEMR\Modules\Copilot\Synthesis\LabResultEntry;
 use OpenEMR\Modules\Copilot\Synthesis\MedicationEntry;
 use OpenEMR\Modules\Copilot\Synthesis\SourceRef;
+use OpenEMR\Modules\Copilot\Verification\CitationIndex;
 use OpenEMR\Modules\Copilot\Verification\ClaimVerifier;
 use OpenEMR\Modules\Copilot\Verification\DraftClaim;
 use OpenEMR\Modules\Copilot\Verification\ReferenceIndex;
@@ -473,6 +474,7 @@ class TurnOrchestratorTest extends TestCase
             degraded: false,
             degradedReason: null,
             disclosure: null,
+            citations: CitationIndex::fromChart(new ChartSnapshot([], [], [], [])),
         );
     }
 }

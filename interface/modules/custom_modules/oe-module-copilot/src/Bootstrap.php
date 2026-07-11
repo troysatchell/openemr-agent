@@ -29,6 +29,7 @@ use OpenEMR\Modules\Copilot\Audit\EventAuditDisclosureLogger;
 use OpenEMR\Modules\Copilot\Chart\ChartReader;
 use OpenEMR\Modules\Copilot\Chart\FhirChartMapper;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirGateway;
+use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirServiceFactory;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
 use OpenEMR\Modules\Copilot\Llm\AnthropicLlmClient;
@@ -182,7 +183,15 @@ class Bootstrap
                 try {
                     $endpoint = new TurnEndpoint(self::buildTurnOrchestrator());
 
-                    return $endpoint->handle(new PhysicianContext($username, $userId), $decoded);
+                    // Normalise decoded JSON to string keys at this boundary so
+                    // the endpoint receives array<string, mixed> (a JSON object's
+                    // keys are strings; PHP coerces numeric ones to int).
+                    $input = [];
+                    foreach ($decoded as $key => $value) {
+                        $input[(string) $key] = $value;
+                    }
+
+                    return $endpoint->handle(new PhysicianContext($username, $userId), $input);
                 } catch (\DomainException) {
                     // Generic by design — never echo internals (R11).
                     http_response_code(400);
@@ -220,7 +229,7 @@ class Bootstrap
         };
 
         return new ReadThroughChartSnapshotProvider(
-            new ChartReader(new OpenEmrFhirGateway()),
+            new ChartReader(new OpenEmrFhirGateway(new OpenEmrFhirServiceFactory())),
             new FhirChartMapper(),
             new ChartSnapshotSynthesizer(),
             $pidResolver,

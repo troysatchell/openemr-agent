@@ -246,7 +246,12 @@ class SnapshotEndpointTest extends TestCase
         $this->assertSame(['type', 'summary', 'refs'], array_keys($finding));
         $this->assertSame('PanicLab', $finding['type']);
         $this->assertStringContainsString('Potassium', $finding['summary']);
-        $this->assertSame(['procedure_result:lab-k'], $finding['refs']);
+        // A citation is the exact grounding token PLUS the humanized kind and
+        // the record's own label — readable provenance, never invented (R6/R10).
+        $this->assertSame(
+            [['token' => 'procedure_result:lab-k', 'kind' => 'Lab', 'label' => 'Potassium']],
+            $finding['refs'],
+        );
 
         $this->assertSame([], $snapshot['unevaluable']);
         $this->assertSame([], $snapshot['unknown_currency']);
@@ -258,14 +263,17 @@ class SnapshotEndpointTest extends TestCase
                     'value' => 6.8,
                     'unit' => 'mmol/L',
                     'resulted_at' => '2026-07-07T07:00:00+00:00',
-                    'refs' => ['procedure_result:lab-k'],
+                    'refs' => [['token' => 'procedure_result:lab-k', 'kind' => 'Lab', 'label' => 'Potassium']],
                 ],
             ],
             $snapshot['new_labs'],
         );
 
         $this->assertSame(
-            [['name' => 'Lisinopril 10mg Tablet', 'refs' => ['lists:med-lis']]],
+            [[
+                'name' => 'Lisinopril 10mg Tablet',
+                'refs' => [['token' => 'lists:med-lis', 'kind' => 'Medication', 'label' => 'Lisinopril 10mg Tablet']],
+            ]],
             $snapshot['current_medications'],
         );
         $this->assertSame([], $snapshot['current_allergies']);
@@ -368,7 +376,10 @@ class SnapshotEndpointTest extends TestCase
         $item = $snapshot['unevaluable'][0];
         $this->assertSame(['reason', 'refs'], array_keys($item));
         $this->assertStringContainsString('Vitamin D', $item['reason']);
-        $this->assertSame(['procedure_result:lab-d'], $item['refs']);
+        $this->assertSame(
+            [['token' => 'procedure_result:lab-d', 'kind' => 'Lab', 'label' => 'Vitamin D']],
+            $item['refs'],
+        );
         $this->assertFalse($snapshot['quiet'], 'An unevaluable item forfeits quiet (R5)');
     }
 
@@ -394,8 +405,16 @@ class SnapshotEndpointTest extends TestCase
         $snapshot = $result['snapshot'];
         $this->assertSame(
             [
-                ['kind' => 'medication', 'name' => 'Atorvastatin 20mg', 'refs' => ['lists:med-ator']],
-                ['kind' => 'allergy', 'name' => 'Latex', 'refs' => ['lists:alg-latex']],
+                [
+                    'kind' => 'medication',
+                    'name' => 'Atorvastatin 20mg',
+                    'refs' => [['token' => 'lists:med-ator', 'kind' => 'Medication', 'label' => 'Atorvastatin 20mg']],
+                ],
+                [
+                    'kind' => 'allergy',
+                    'name' => 'Latex',
+                    'refs' => [['token' => 'lists:alg-latex', 'kind' => 'Allergy', 'label' => 'Latex']],
+                ],
             ],
             $snapshot['unknown_currency'],
         );
