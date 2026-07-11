@@ -97,7 +97,7 @@ verified signature/shared secret. Confirm each validates before trusting input.
 |---|---|---|
 | `interface/webhooks/payment/rainforest.php:18` | confirm Rainforest webhook signature verification | ✅ **ALLOW** — `Verifier::verify()` runs before any processing (`:40-54`): HMAC-SHA256 over `id.timestamp.body`, constant-time `hash_equals`, 300s replay window, 400 on failure. Tested (`VerifierTest.php`). |
 | `portal/portal_payment.rainforest.php:21` | confirm Rainforest webhook signature verification | ✅ **ALLOW (reclassify)** — *not* a webhook; a same-origin portal AJAX endpoint returning payin config. CSRF-gated (`X-CSRF-TOKEN` vs the `rainforest` session subject, 403+exit, `:15-20`) before `globals.php`; token minted only in an authenticated portal session. |
-| `interface/modules/custom_modules/oe-module-faxsms/library/webhook_receiver.php:25` | confirm inbound FaxSMS webhook secret/signature check | ⚠️ **FINDING** — **no signature/secret verification exists** in the module. State-changing (queue writes + token-authenticated media fetch + document store). Tracked as [`SEC-101`](../../tickets/security/SEC-101-signalwire-webhook-signature.md). |
+| `interface/modules/custom_modules/oe-module-faxsms/library/webhook_receiver.php:25` | confirm inbound FaxSMS webhook secret/signature check | 🔧 **FIXED 2026-07-11** — was the one finding (no signature/secret verification on a state-changing endpoint). Now verifies the `X-Twilio-Signature` (SignalWire-compat) before any write/fetch, fail-closed. [`SEC-101`](../../tickets/security/SEC-101-signalwire-webhook-signature.md) (`review` — pending live confirmation + merge). |
 | `interface/modules/custom_modules/oe-module-faxsms/library/phone-services/voice_webhook.php:29` | confirm FaxSMS voice webhook secret/signature check | ✅ **ALLOW (note)** — token gate (`$_GET['token']` vs session `ringcentral_voice_token`, 403 on empty/mismatch, `:33-39`); fails closed. Hardening notes: uses `!==` not `hash_equals` (timing); session-stored expected token is a questionable model for a sessionless caller. |
 
 ## E. Portal pre-auth account flows — REVIEWED 2026-07-11
@@ -136,9 +136,10 @@ columns above); **one finding**:
 1. **Webhooks (D):** Rainforest payment webhook ✅ (HMAC `Verifier`);
    `portal_payment.rainforest.php` ✅ (CSRF — not actually a webhook);
    RingCentral voice webhook ✅ (token, fails closed). **SignalWire fax receiver
-   ⚠️ — no signature/secret verification; tracked as
-   [`SEC-101`](../../tickets/security/SEC-101-signalwire-webhook-signature.md)
-   (Med, founder sign-off to remediate).**
+   — was the one finding (no signature/secret verification); 🔧 fixed 2026-07-11
+   via [`SEC-101`](../../tickets/security/SEC-101-signalwire-webhook-signature.md)
+   (X-Twilio-Signature verification, fail-closed; `review` pending live
+   confirmation + merge).**
 2. **Portal pre-auth flows (E):** all three ✅ — session-flag + CSRF + reCAPTCHA
    (account), authenticated-session + current-password (reset), register-toggle
    + reCAPTCHA + CSRF (verify).

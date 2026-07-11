@@ -44,7 +44,7 @@ phase-2 (a log-only runtime `$ignoreAuth` assertion) remains deferred.
 | [SEC-S11](SEC-S11-login-core-tests.md) | Login core has no unit tests | Systemic | — | no | 1 | ✅ `done` `508304e` |
 | [SEC-S4](SEC-S4-ignoreauth-allowlist.md) | Auth hinges on `$ignoreAuth` global | High | — | signed off | 2 | ✅ `done` `ef1dcac` (phase-1 docs; phase-2 deferred) |
 | [SEC-S8](SEC-S8-authutils-readonly-constructor.md) | `AuthUtils` ctor writes to DB | Low–Med | — | signed off | 2 | ✅ `done` `a924703` |
-| [SEC-101](SEC-101-signalwire-webhook-signature.md) | SignalWire fax webhook has no signature check | Med | — | YES (auth surface) | — | 🔶 `blocked` (found in S4-review; awaiting sign-off) |
+| [SEC-101](SEC-101-signalwire-webhook-signature.md) | SignalWire fax webhook has no signature check | Med | — | given (proceed) | — | 🔵 `review` — implemented `<pending>`; pending live confirmation + merge |
 
 **Net-new (post-S4-review):** [SEC-101](SEC-101-signalwire-webhook-signature.md)
 was surfaced 2026-07-11 while verifying the S4 REVIEW entries in

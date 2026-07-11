@@ -13,12 +13,99 @@
 
 namespace OpenEMR\Modules\FaxSMS\Utils;
 
+use SensitiveParameter;
+use Twilio\Security\RequestValidator;
+
 /**
  * SignalWire webhook input validator helpers
  *
  */
 final class SignalWireWebhookValidator
 {
+    /**
+     * SEC-101: verify inbound webhook authenticity before trusting its input.
+     *
+     * SignalWire's compatibility (LAML) API signs webhooks with the
+     * Twilio-compatible `X-Twilio-Signature`: HMAC-SHA1 of the request URL with
+     * the alphabetically-sorted POST params appended, keyed by the project's
+     * auth token, base64-encoded (for JSON bodies the URL carries a
+     * `bodySHA256` param instead and the raw body is passed through). This
+     * delegates the crypto to Twilio's vetted RequestValidator (constant-time
+     * compare; tries the URL with and without an explicit port).
+     *
+     * Fails closed: a missing signature header OR an unconfigured signing token
+     * returns false, so an outage or misconfiguration rejects webhooks rather
+     * than accepting forged ones. Never returns true on the strength of the
+     * caller's input alone.
+     *
+     * @param string $signatureHeader the `X-Twilio-Signature` request header
+     * @param string $requestUrl the public URL SignalWire signed (see buildRequestUrl())
+     * @param array<array-key, mixed>|string $payload POST params for form webhooks, or the raw body for JSON
+     * @param string $authToken the SignalWire project auth token (the signing key)
+     */
+    public static function verifySignature(
+        string $signatureHeader,
+        string $requestUrl,
+        array|string $payload,
+        #[SensitiveParameter] string $authToken,
+    ): bool {
+        if ($signatureHeader === '' || $authToken === '') {
+            return false;
+        }
+
+        return (new RequestValidator($authToken))->validate($signatureHeader, $requestUrl, $payload);
+    }
+
+    /**
+     * Reconstructs the public URL SignalWire signed, from the request's server
+     * variables. Proxy-aware: prefers `X-Forwarded-Proto`/`X-Forwarded-Host`
+     * (set by Railway and similar front proxies) over the app-visible scheme
+     * and host, taking the first hop of a comma-listed header. Spoofing these
+     * headers cannot forge a valid signature — a mismatched URL only makes a
+     * legitimate request fail verification, never the reverse.
+     *
+     * @param array<array-key, mixed> $server the request server bag (e.g. $_SERVER)
+     */
+    public static function buildRequestUrl(array $server): string
+    {
+        $proto = self::firstHeaderValue($server, 'HTTP_X_FORWARDED_PROTO');
+        if ($proto === '') {
+            $proto = self::stringValue($server, 'HTTPS') === 'on' ? 'https' : 'http';
+        }
+
+        $host = self::firstHeaderValue($server, 'HTTP_X_FORWARDED_HOST');
+        if ($host === '') {
+            $host = self::stringValue($server, 'HTTP_HOST');
+        }
+
+        return $proto . '://' . $host . self::stringValue($server, 'REQUEST_URI');
+    }
+
+    /**
+     * @param array<array-key, mixed> $server
+     */
+    private static function stringValue(array $server, string $key): string
+    {
+        $value = $server[$key] ?? '';
+
+        return is_string($value) ? $value : '';
+    }
+
+    /**
+     * First value of a possibly comma-listed forwarded header, trimmed.
+     *
+     * @param array<array-key, mixed> $server
+     */
+    private static function firstHeaderValue(array $server, string $key): string
+    {
+        $value = self::stringValue($server, $key);
+        if ($value === '') {
+            return '';
+        }
+
+        return trim(explode(',', $value)[0]);
+    }
+
     /**
      * @param string $faxId
      * @return string
