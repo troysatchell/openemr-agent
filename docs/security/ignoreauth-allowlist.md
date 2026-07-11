@@ -89,37 +89,37 @@ to cron/localhost; the callable safety of the background runner is covered by S6
 | `library/MedEx/MedEx.php:30` | MedEx messaging |
 | `interface/modules/custom_modules/oe-module-faxsms/library/rc_sms_notification.php:78` | FaxSMS notification task |
 
-## D. External webhooks — REVIEW
+## D. External webhooks — REVIEWED 2026-07-11
 No session by design (external callers), so authenticity **must** come from a
 verified signature/shared secret. Confirm each validates before trusting input.
 
-| File:line | Review action |
-|---|---|
-| `interface/webhooks/payment/rainforest.php:18` | confirm Rainforest webhook signature verification |
-| `portal/portal_payment.rainforest.php:21` | confirm Rainforest webhook signature verification |
-| `interface/modules/custom_modules/oe-module-faxsms/library/webhook_receiver.php:25` | confirm inbound FaxSMS webhook secret/signature check |
-| `interface/modules/custom_modules/oe-module-faxsms/library/phone-services/voice_webhook.php:29` | confirm FaxSMS voice webhook secret/signature check |
+| File:line | Review action | Outcome |
+|---|---|---|
+| `interface/webhooks/payment/rainforest.php:18` | confirm Rainforest webhook signature verification | ✅ **ALLOW** — `Verifier::verify()` runs before any processing (`:40-54`): HMAC-SHA256 over `id.timestamp.body`, constant-time `hash_equals`, 300s replay window, 400 on failure. Tested (`VerifierTest.php`). |
+| `portal/portal_payment.rainforest.php:21` | confirm Rainforest webhook signature verification | ✅ **ALLOW (reclassify)** — *not* a webhook; a same-origin portal AJAX endpoint returning payin config. CSRF-gated (`X-CSRF-TOKEN` vs the `rainforest` session subject, 403+exit, `:15-20`) before `globals.php`; token minted only in an authenticated portal session. |
+| `interface/modules/custom_modules/oe-module-faxsms/library/webhook_receiver.php:25` | confirm inbound FaxSMS webhook secret/signature check | ⚠️ **FINDING** — **no signature/secret verification exists** in the module. State-changing (queue writes + token-authenticated media fetch + document store). Tracked as [`SEC-101`](../../tickets/security/SEC-101-signalwire-webhook-signature.md). |
+| `interface/modules/custom_modules/oe-module-faxsms/library/phone-services/voice_webhook.php:29` | confirm FaxSMS voice webhook secret/signature check | ✅ **ALLOW (note)** — token gate (`$_GET['token']` vs session `ringcentral_voice_token`, 403 on empty/mismatch, `:33-39`); fails closed. Hardening notes: uses `!==` not `hash_equals` (timing); session-stored expected token is a questionable model for a sessionless caller. |
 
-## E. Portal pre-auth account flows — REVIEW
+## E. Portal pre-auth account flows — REVIEWED 2026-07-11
 Part of the *unauthenticated* portal reset/verify flow (patient not yet logged
 in), so they cannot rely on a portal session — they must be gated by a
 one-time/email token. Confirm the token gate is present and strong.
 
-| File:line | Review action |
-|---|---|
-| `portal/account/account.php:33` | confirm token/credential gate for account creation |
-| `portal/account/index_reset.php:32` | confirm reset-token validation |
-| `portal/account/verify.php:34` | confirm verification-token validation |
+| File:line | Review action | Outcome |
+|---|---|---|
+| `portal/account/account.php:33` | confirm token/credential gate for account creation | ✅ **ALLOW** — `$ignoreAuth_onsite_portal` set only when a matching session flag exists (`:27-34`); each action re-checks its flag + CSRF + reCAPTCHA (`:45-70`). |
+| `portal/account/index_reset.php:32` | confirm reset-token validation | ✅ **ALLOW** — not an anonymous reset: requires an authenticated portal session (`pid` + `patient_portal_onsite_two`) else destroys session + redirects (`:31-38`); CSRF on POST (`:50`); verifies current password before change (`:76`). |
+| `portal/account/verify.php:34` | confirm verification-token validation | ✅ **ALLOW** — self-registration step 1; gated behind the `portal_onsite_two_register` toggle (401 + destroy if off) plus reCAPTCHA + CSRF (`:39-47, 228`). Anonymous by necessity; defense-in-depth present. |
 
-## F. Utility / status AJAX — REVIEW
+## F. Utility / status AJAX — REVIEWED 2026-07-11
 Unauthenticated utility endpoints; confirm each is intended to be reachable
 without the staff gate and discloses nothing sensitive.
 
-| File:line | Review action |
-|---|---|
-| `library/ajax/sql_server_status.php:18` | confirm no server/info disclosure to anonymous callers |
-| `library/ajax/easipro_util.php:28` | confirm intended unauthenticated scope |
-| `interface/forms/eye_mag/taskman.php:34` | confirm intended unauthenticated scope |
+| File:line | Review action | Outcome |
+|---|---|---|
+| `library/ajax/sql_server_status.php:18` | confirm no server/info disclosure to anonymous callers | ✅ **ALLOW** — CSRF-gated with subject `sqlupgrade` (obtainable only from the admin `sql_upgrade.php` page, 403 on fail, `:29`), *and* output is regex-scrubbed of all query values before echo (`:47`). |
+| `library/ajax/easipro_util.php:28` | confirm intended unauthenticated scope | ✅ **ALLOW (reclassify)** — not anonymous: `$ignoreAuth = true` only on a valid portal session; the staff path uses the core session (`$ignoreAuth = false`); CSRF on POST (`:25-39`). |
+| `interface/forms/eye_mag/taskman.php:34` | confirm intended unauthenticated scope | ✅ **ALLOW (reclassify → bucket C)** — `$ignoreAuth` is set **only under CLI** (`php_sapi_name() === 'cli'`, `:33-34`); web access stays staff-authenticated. This is a CLI/cron opt-out, not a web-anonymous endpoint. |
 
 ## G. Test / non-production — ALLOW
 | File:line | Purpose |
@@ -128,14 +128,26 @@ without the staff gate and discloses nothing sensitive.
 
 ---
 
-## Open REVIEW items (founder / human decision)
-1. **Webhooks (D):** verify signature/secret validation on the two Rainforest
-   payment webhooks and the FaxSMS inbound receiver.
-2. **Portal pre-auth flows (E):** verify token strength on account create / reset
-   / verify.
-3. **Utility endpoints (F):** confirm `sql_server_status`, `easipro_util`,
-   `eye_mag/taskman` are intended anonymous endpoints with no disclosure.
+## REVIEW outcomes (completed 2026-07-11)
+All ten REVIEW-flagged entries in buckets D/E/F were code-verified against HEAD.
+**Nine confirmed adequately controlled** (details in the per-bucket Outcome
+columns above); **one finding**:
+
+1. **Webhooks (D):** Rainforest payment webhook ✅ (HMAC `Verifier`);
+   `portal_payment.rainforest.php` ✅ (CSRF — not actually a webhook);
+   RingCentral voice webhook ✅ (token, fails closed). **SignalWire fax receiver
+   ⚠️ — no signature/secret verification; tracked as
+   [`SEC-101`](../../tickets/security/SEC-101-signalwire-webhook-signature.md)
+   (Med, founder sign-off to remediate).**
+2. **Portal pre-auth flows (E):** all three ✅ — session-flag + CSRF + reCAPTCHA
+   (account), authenticated-session + current-password (reset), register-toggle
+   + reCAPTCHA + CSRF (verify).
+3. **Utility endpoints (F):** all three ✅ — CSRF + output scrubbing
+   (`sql_server_status`), portal/staff-session + CSRF (`easipro_util`),
+   CLI-only opt-out (`eye_mag/taskman`, belongs in bucket C).
 
 Nothing here was removed or changed — this phase only makes the opt-out surface
-visible and re-checkable. The long-term fix (opt-*out* middleware that is on by
-default) remains an S4/S11 danger-zone project, not a change made in this pass.
+visible and re-checkable, and the review confirms the alternative controls. The
+long-term fix (opt-*out* middleware that is on by default) remains an S4/S11
+danger-zone project, not a change made in this pass. `SEC-101` is the one net-new
+control the review surfaced.
