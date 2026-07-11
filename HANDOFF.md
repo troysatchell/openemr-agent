@@ -97,8 +97,11 @@ vendor/bin/phpstan analyze -c phpstan.neon.dist --memory-limit=4G --no-progress 
 ## Open items / next steps (ranked)
 
 **Copilot (the eval target):**
-1. `OpenEmrFhirGateway` has no isolated test (needs a live stack) — add a thin
-   contract test or an explicit "covered by live smoke only" note.
+1. ~~`OpenEmrFhirGateway` has no isolated test~~ — **done (`c229932`,
+   2026-07-11):** service construction extracted into an injected
+   `FhirServiceFactory`; 9-test isolated contract suite covers the whole
+   gateway pipeline. Only the factory's five real service constructions
+   remain live-smoke-only (noted in its docblock).
 2. Golden fixtures are **founder-adjudicated, not clinician-adjudicated** — a
    documented *validation* limitation, not a defect. Have the honest framing ready.
 
