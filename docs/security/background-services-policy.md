@@ -13,6 +13,16 @@ execution, the runner only invokes callables on the allow-list in
   deployment policy (founder). Restrict `background_services` write access to
   trusted admins / migrations only.
 
+## Dev/test seam (must stay unset in production)
+The runner's gate is `isPermittedToRun()`, which equals the shipped allow-list
+plus any callables named in the `OPENEMR_BACKGROUND_EXTRA_ALLOWED_CALLABLES`
+environment variable (comma-separated). This exists only so integration tests
+can exercise the runner with a probe callable without polluting the shipped
+list. It **must be unset in production** — and does not widen the S6 threat
+model, since the DB-write-only attacker S6 defends against cannot set the server
+process environment (that requires shell/deploy access, which already implies
+code execution). `ALLOWED_CALLABLES` remains the only production gate.
+
 ## Future hardening (not yet implemented)
 Consider a structural guard: require that the invoked function be defined in the
 file the row's `require_once` resolved to (via `ReflectionFunction::getFileName()`),

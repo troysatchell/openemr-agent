@@ -67,9 +67,7 @@ in place before the first PHI-bearing request leaves.
 > ([`ARCHITECTURE.md`](ARCHITECTURE.md), [`USERS.md`](USERS.md), `CLAUDE.md`).
 > Consolidated 2026-07-07 from the former onboarding audit docs with findings
 > unchanged — this file is the single canonical audit. Companion as-found docs
-> (`CURRENT_ARCHITECTURE.md`, `GLOSSARY.md`, `OPEN_QUESTIONS.md`,
-> `START_HERE.md`) live in `docs/onboarding/` — prose references like
-> "`OPEN_QUESTIONS.md` #6" below point there.
+> (`CURRENT_ARCHITECTURE.md`, `GLOSSARY.md`) live in `docs/onboarding/`.
 >
 > **Scope note.** This is a design/architecture audit derived by reading entry
 > points, wiring, and the security-critical `src/Common` tier — **not a
@@ -294,7 +292,6 @@ an unauthenticated REST/FHIR caller. This directly violates `CLAUDE.md`
 ("Never expose `$e->getMessage()` in user-facing output"). The comment says
 "should never reach here," but it is reachable — any uncaught throwable in the
 kernel bootstrap or a listener lands here.
-Cross-ref: `OPEN_QUESTIONS.md` #6.
 **Recommendation:** Log the exception (already done via `error_log`) and return
 only the generic `error` string; drop the `message` key. Confirm no other
 handler re-adds it.
@@ -338,7 +335,7 @@ the value is a mutable global. A new page that forgets the pattern, or any code
 path that sets `$ignoreAuth = true` (line 722 does so automatically when
 `portal_onsite_two_enable` is on), silently serves without authentication. This
 is the single largest-blast-radius pattern in the legacy tier
-(`START_HERE.md`, `CURRENT_ARCHITECTURE.md` §5).
+(`CURRENT_ARCHITECTURE.md` §5).
 **Recommendation:** Treat every `$ignoreAuth = true` site as a security-review
 checkpoint; enumerate them (grep) and document the allow-list. Longer term, move
 auth to a front-controller/middleware that is on by default and opts *out*
@@ -353,14 +350,13 @@ hand inside each route closure** with bare-string scopes
 edited route that omits the call, or mistypes the scope pair, exposes data with
 no compile-time, DI, or test guard to catch it. There is no default-deny gate
 that every route passes through.
-Cross-ref: `OPEN_QUESTIONS.md` #5.
 **Recommendation:** Add a default-deny check in the dispatch layer (a route is
 denied unless it declares a scope), or a test that asserts every registered
 route in `RestConfig::$ROUTE_MAP` invokes an authorization check. Until then,
 authz on new routes is a manual review item.
 
 ### S6 — Executable config in `background_services` — **Medium**
-`CURRENT_ARCHITECTURE.md` §6 / `OPEN_QUESTIONS.md` #10 — background jobs are
+`CURRENT_ARCHITECTURE.md` §6 — background jobs are
 dispatched by a `(require_once path, global function name)` pair stored in a
 `background_services` **DB row** and invoked dynamically by
 `BackgroundServiceRunner`. The include path is well-guarded:
@@ -391,7 +387,6 @@ on **every** login attempt, authenticated or not) may `INSERT`/`UPDATE` the
 this means an unauthenticated attacker's login attempts can trigger writes, and
 it prevents running the auth path against a read-replica or least-privilege DB
 user. Steady-state it's a single read (line 106), so impact is bounded.
-Cross-ref: `OPEN_QUESTIONS.md` #8.
 **Recommendation:** Move the dummy-hash/expiry bootstrap to setup/migration; make
 the constructor read-only.
 
@@ -401,7 +396,6 @@ unconditionally; `src/BC/FallbackRouter.php:188-197` returns HTTP `418` with
 `{"routed":"apis"}` for any URI ending `/_routing_test`. It exposes no PHI, but
 it is a test affordance sitting on the production path and confirms the app /
 routing layer to an anonymous prober.
-Cross-ref: `OPEN_QUESTIONS.md` #7.
 **Recommendation:** Guard behind a non-production environment check.
 
 ### S10 — Audit logging is fully admin-disableable — **Low (compliance)**
@@ -417,7 +411,7 @@ document (policy) that disabling them is prohibited. Consider preventing disable
 in production builds.
 
 ### S11 — Login core has no direct unit tests — **Systemic**
-`OPEN_QUESTIONS.md` #18 — `AuthUtils` / `library/auth.inc.php` (~1,400 lines:
+`AuthUtils` / `library/auth.inc.php` (~1,400 lines:
 failed-login lockout, timing defense, LDAP, password expiry, session setup) have
 **no direct unit tests**; only one E2e happy-path/wrong-password browser test
 exercises them. Not a vulnerability itself, but it means any regression in the
@@ -467,9 +461,8 @@ be weakened by any remediation of the above:
    design-level; pair with **S11** (add auth tests) so refactors are safe.
 5. **S6 / S8 / S10** — hardening + compliance; coordinate with deployment owner.
 
-*Findings that overlap `OPEN_QUESTIONS.md` are cross-referenced; resolving those
-questions with the team may reclassify a few of these (e.g. S6, S8) from "risk"
-to "accepted design."*
+*A few of these (e.g. S6, S8) may reclassify from "risk" to "accepted design"
+once the corresponding design intent is confirmed with the team.*
 
 ---
 
@@ -545,7 +538,7 @@ P1 is multiplied by the frameset fan-out. This is structural to the legacy UI,
 not a single hotspot.
 **Recommendation:** Measure requests-per-perceived-page first (P1's cache makes
 each cheaper regardless). Longer term this is the front-controller migration the
-team is already circling (`OPEN_QUESTIONS.md` #3–4).
+team is already circling.
 
 ### P3 — Fresh DB connection per request by default — **Medium**
 `src/BC/DatabaseConnectionFactory.php:156-173` —
@@ -598,7 +591,7 @@ not a systemic one.)
 measure against the slow-query log for per-patient chart loads.
 
 ### P7 — Background jobs coupled to user activity — **Medium**
-`CURRENT_ARCHITECTURE.md` §6 + `OPEN_QUESTIONS.md` #11 — unless cron is
+`CURRENT_ARCHITECTURE.md` §6 — unless cron is
 configured, background services (reminders, Direct messaging, MedEx) run on the
 back of AJAX polls from logged-in users ("piggyback"). Performance consequences:
 (a) the job executes **inside** a user-facing request, adding its latency to
@@ -693,8 +686,7 @@ OpenEMR is organized along **three orthogonal axes**, and every capability lives
 at the intersection of them:
 
 1. **Era** — modern `src/` (`OpenEMR\`, PSR-4, services) vs. legacy
-   `library/`+`interface/` (procedural, globals). *(`CURRENT_ARCHITECTURE.md` §5,
-   `START_HERE.md`.)*
+   `library/`+`interface/` (procedural, globals). *(`CURRENT_ARCHITECTURE.md` §5.)*
 2. **Entry door** — legacy pages bootstrap via `interface/globals.php`; the API
    bootstraps via `bootstrap.php` + `SiteSetupListener`. Two parallel init paths.
 3. **Extension mechanism** — the codebase is extended **without editing core**
@@ -722,7 +714,7 @@ tables.
 | **Registered modules** | `modules` DB table | `mod_active`, `mod_directory`, `type` (1 = Laminas/Zend, ≠1 = custom). Drives what loads at bootstrap. |
 | **Background jobs** | `background_services` DB table | `(name, function, require_once path, execute_interval, …)` — executable config (Sec S6). |
 | **Schema changes** | Doctrine Migrations — `src/Core/Migrations`, `db/Migrations` | New schema goes here; legacy per-form `table.sql` still exists for forms. |
-| **Identity** | dual: `pid` (int PK) **and** `uuid` (binary(16)) on most resources | Know which a layer expects (`START_HERE.md` #3, Perf constraints). |
+| **Identity** | dual: `pid` (int PK) **and** `uuid` (binary(16)) on most resources | Know which a layer expects (see Perf constraints). |
 
 **Multi-tenancy is by site:** each `sites/<id>/` has its own DB config and the
 `site_id` is resolved early in *both* bootstraps. There is no cross-site data or
@@ -844,17 +836,16 @@ Since this precedes an **architecture edit** review, these are the seams where
 - **The DI container is aspirational.** `config/*.php` exists but is "not fully
   integrated"; REST route closures `new` up controllers directly. You usually
   **cannot** just declare a dependency and have it injected — you wire it
-  manually or via the event/module bootstrap (`OPEN_QUESTIONS.md` #3;
-  `START_HERE.md` #4).
+  manually or via the event/module bootstrap.
 - **Two HTTP object models on the API path.** Request is HttpFoundation;
-  controllers return PSR-7; bridged per response (`OPEN_QUESTIONS.md` #4). New API
+  controllers return PSR-7; bridged per response. New API
   code must live with the bridge.
-- **Authorization is per-route and manual** (Sec S5 / `OPEN_QUESTIONS.md` #5) — a
+- **Authorization is per-route and manual** (Sec S5) — a
   new route without an explicit check is silently unprotected. No default-deny gate.
 - **Auth enforcement is an ambient global** (`$ignoreAuth`, Sec S4) — any new
   legacy page inherits this fragile pattern; don't add more opt-outs without review.
-- **`globals.php` and `auth.inc.php` are untested and load-bearing** (Sec S11,
-  `START_HERE.md`) — edits there have huge blast radius and no test net.
+- **`globals.php` and `auth.inc.php` are untested and load-bearing** (Sec S11) —
+  edits there have huge blast radius and no test net.
 - **Executable config tables** (`background_services`, `modules`) mean some
   "architecture" lives in **data**, not code — a full picture requires reading
   those rows, not just the tree.
@@ -879,10 +870,10 @@ models, manual authz), the two-bootstrap seam, and anything in
 procedural pages). The extension seams point at the modern skin; the risk is that
 "copy the nearest legacy file" pulls new work back into the spine.
 
-*The most useful pre-edit question for the team (from `OPEN_QUESTIONS.md` #22):
-is there a documented **target** architecture and an owner for the modernization
-frontier? The seams above describe where to plug in *today*; whether a given edit
-should follow the modern seam or the legacy pattern depends on that answer.*
+*The most useful pre-edit question for the team: is there a documented **target**
+architecture and an owner for the modernization frontier? The seams above describe
+where to plug in *today*; whether a given edit should follow the modern seam or the
+legacy pattern depends on that answer.*
 
 ---
 
@@ -1350,6 +1341,6 @@ The single highest-leverage sequence if standing up agents on this EHR:
 **(1)** close Security S1-S3; **(2)** enable ATNA/external audit (C1) and define
 retention (C2); **(3)** put BAAs in place for all PHI vendors incl. the LLM (C4/C5);
 **(4)** enforce minimum-necessary + de-id + disclosure logging on the LLM path
-(C5); **(5)** apply the Audit-4 agent data rules. Findings that trace to unresolved
-team questions remain cross-referenced to `OPEN_QUESTIONS.md`; resolving those may
-reclassify individual items from "risk" to "accepted design."
+(C5); **(5)** apply the Audit-4 agent data rules. Some findings may reclassify
+from "risk" to "accepted design" once the corresponding design intent is confirmed
+with the team.

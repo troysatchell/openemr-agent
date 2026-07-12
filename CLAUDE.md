@@ -82,7 +82,7 @@ the FHIR certification surface · the PSR-7 bridge and per-route authz patterns
 - **Quality gates:** PHPStan L10, phpcs, Semgrep, existing PHPUnit suites, plus
   the clinical-accuracy gate. All green before a task is complete.
 - **Docs stay coherent:** a decision that changes `ARCHITECTURE.md` usually
-  touches `PRD.md`/`USERS.md`/`OPEN_QUESTIONS.md` — flag them.
+  touches `PRD.md`/`USERS.md` — flag them.
 
 ## Escalate immediately when
 

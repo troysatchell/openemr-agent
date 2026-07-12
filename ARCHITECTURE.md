@@ -152,8 +152,7 @@ organization + minimum-necessary + disclosure logging**, not "BAA + ZDR" (§4)
 — the gating requirement is *compliance-capable inference with tool use*, not a
 model family. Single agent, deliberately **not** multi-agent: the dangerous
 errors live *between* sources (D9), so per-source sub-agents would let
-interactions fall through the seam. Full option-by-option rationale:
-`docs/onboarding/PRE_SEARCH.md`.
+interactions fall through the seam.
 
 ## 3. How it accesses patient data
 
@@ -339,8 +338,7 @@ just traceable after.
   answerable from logs; snapshot p95 latency, the monitor rates, and the
   judgment provisional regression thresholds are the watched metrics (§6
   table). A dedicated LLM-tracing product can be
-  layered later; it is not load-bearing for v1
-  (`docs/onboarding/PRE_SEARCH.md` §8).
+  layered later; it is not load-bearing for v1.
 - **Limits.** The gate *bounds and monitors* omission; it does not eliminate it.
   Be precise: critical-subset misses are a **code guarantee we verify**;
   judgment-based misses are **monitored, not guaranteed.** And the gate is only
@@ -443,8 +441,7 @@ snapshot demo.
 - The **offline-grant model** for unattended overnight batch (§4, deferred): does
   OpenEMR's existing OAuth2/SMART server already support a confidential client with
   per-physician read-only `offline_access` and scope re-derived from current ACL at
-  token mint — or must that be built? *(Enabling capability tracked as an as-found
-  question in `docs/onboarding/OPEN_QUESTIONS.md` #25.)*
+  token mint — or must that be built?
 
 ---
 

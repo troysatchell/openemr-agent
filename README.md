@@ -44,7 +44,7 @@ built.
   --wait`, then open <http://localhost:8300/> (login `admin` / `pass`). See
   also [DOCKER_README.md](DOCKER_README.md) and `CLAUDE.md`.
 - **Onboarding / evidence docs:** [`docs/onboarding/`](docs/onboarding/) —
-  start at [`START_HERE.md`](docs/onboarding/START_HERE.md).
+  start at [`CURRENT_ARCHITECTURE.md`](docs/onboarding/CURRENT_ARCHITECTURE.md).
 
 The upstream OpenEMR README follows.
 

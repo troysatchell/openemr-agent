@@ -8,8 +8,7 @@
 > **Baseline commit:** `859d6d3` (2026-07-06)
 > **Method:** derived by reading entry points, wiring, and tests — not the
 > project's own prose docs. Where the code and the docs disagree, this file
-> follows the code. Open uncertainties are collected in
-> [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md); domain terms are defined in
+> follows the code. Domain terms are defined in
 > [`GLOSSARY.md`](GLOSSARY.md).
 >
 > If you want a *proposed* architecture, create a separate document
@@ -266,4 +265,4 @@ and the legacy `library/`/`interface/` directories sit in the coverage
 denominator while being nearly uncovered. Treat the FHIR/API/certification and
 `Isolated` tests as reliable ground truth; treat the legacy tier as
 under-specified. Details and specific gaps are in the accompanying testing
-review and in [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md).
+review.

@@ -3,8 +3,7 @@
 > Domain terms, internal jargon, and codebase-specific naming conventions
 > encountered while mapping OpenEMR **as we found it** (baseline commit
 > `859d6d3`, 2026-07-06). Definitions are grounded in code/tests; where intent
-> was unclear it is marked *(uncertain)* and carried into
-> [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md). Companion to
+> was unclear it is marked *(uncertain)*. Companion to
 > [`CURRENT_ARCHITECTURE.md`](CURRENT_ARCHITECTURE.md).
 
 ## Domain terms (healthcare / EHR)

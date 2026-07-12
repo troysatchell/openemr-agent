@@ -516,7 +516,9 @@ class BackgroundServiceRunner
         // S6 (AUDIT.md): the callable name comes from a DB row; only shipped,
         // allow-listed functions may run, so table-write access (rogue admin or
         // SQL injection elsewhere) cannot become arbitrary code execution.
-        if (!BackgroundServiceCallableAllowlist::isAllowed($function)) {
+        // isPermittedToRun() == the shipped allow-list in production; it adds a
+        // dev/test-only env seam that is unset in production (see the allow-list).
+        if (!BackgroundServiceCallableAllowlist::isPermittedToRun($function)) {
             $this->logger->warning('Refusing to run non-allow-listed background service callable', [
                 'service' => $service['name'],
                 'callable' => $function,
