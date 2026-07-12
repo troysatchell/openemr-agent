@@ -2,7 +2,7 @@
 
 /**
  * Contract tests — OpenEmrFhirGateway pipeline logic (closes the T5 isolated
- * coverage gap; HANDOFF 2026-07-11 open item #1).
+ * coverage gap).
  *
  * The gateway is exercised against a stubbed FhirServiceBase injected through
  * FhirServiceFactory, so every pipeline branch runs without a database: the
