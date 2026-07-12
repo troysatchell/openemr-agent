@@ -95,7 +95,6 @@ $csrfToken = CsrfUtils::collectCsrfToken($session);
   a.ref { text-decoration:none; cursor:pointer; }
   a.ref:hover { border-color:#20476b; color:#20476b; background:#e4ecf4; }
   a.ref:focus-visible { outline:2px solid #20476b; outline-offset:1px; }
-  .corr { color:var(--mut); font:11px ui-monospace, SFMono-Regular, Menlo, monospace; margin-top:16px; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
   .suggest-row { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 8px; }
   .suggest-row .label { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; align-self:center; }
@@ -335,6 +334,19 @@ async function loadSchedule() {
   }
 }
 
+// Renders a stored ISO timestamp as a clean clinical date (e.g. "Jul 7, 2026"),
+// parsed from the date part directly so a UTC-stored time can never shift the
+// day. Falls back to the raw value rather than hiding it if the shape is
+// unexpected.
+function formatClinicalDate(iso) {
+  if (typeof iso !== "string") { return iso == null ? "" : String(iso); }
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) { return iso; }
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthName = months[parseInt(m[2], 10) - 1] || m[2];
+  return monthName + " " + parseInt(m[3], 10) + ", " + m[1];
+}
+
 function renderSnapshot(data) {
   const zone = $("snapshot");
   zone.replaceChildren();
@@ -408,7 +420,7 @@ function renderSnapshot(data) {
       const item = el("div", "claim");
       let label = lab.analyte + ": " + (lab.value === null || lab.value === undefined ? "(no value)" : lab.value);
       if (lab.unit) { label += " " + lab.unit; }
-      if (lab.resulted_at) { label += " — " + lab.resulted_at; }
+      if (lab.resulted_at) { label += " — " + formatClinicalDate(lab.resulted_at); }
       item.appendChild(el("div", null, label));
       item.appendChild(refChips(lab.refs));
       labsSection.appendChild(item);
@@ -555,19 +567,20 @@ function render(turn) {
       zone.appendChild(item);
     });
     out.appendChild(zone);
-  }
-
-  const quiet = !turn.degraded
-    && !(turn.must_not_miss || []).length
-    && !(turn.unevaluable || []).length
-    && !grounded.length && !rejected.length;
-  if (quiet) {
+  } else if (!turn.degraded) {
+    // The model produced no groundable answer to the question — make that
+    // silence legible rather than blank. Findings above (if any) are
+    // code-detected and shown regardless; this speaks only to the free-text
+    // question, which can only be answered from recorded chart data.
     out.appendChild(el("div", "banner quiet",
-      "Nothing to surface for this question — no critical findings, nothing unevaluable, no grounded statements. Silence here is a checked result, not an error."));
+      "I can only answer from what's recorded in the chart, and that isn't captured here."));
   }
 
+  // The per-turn correlation id joins the PHI-free trace to the disclosure
+  // log — not clinical content, so it is kept out of the physician's view and
+  // stashed as a data attribute for support/audit lookups only.
   if (turn.correlation_id) {
-    out.appendChild(el("div", "corr", "correlation id: " + turn.correlation_id + " (joins the trace and disclosure logs)"));
+    out.dataset.correlationId = turn.correlation_id;
   }
 }
 
@@ -622,6 +635,13 @@ $("patient-select").addEventListener("change", (e) => {
 
 $("refresh").addEventListener("click", loadSchedule);
 $("ask").addEventListener("click", ask);
+// Submit on Enter; Shift+Enter inserts a newline for multi-line questions.
+$("question").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    if (!$("ask").disabled) { ask(); }
+  }
+});
 
 loadSchedule();
 </script>

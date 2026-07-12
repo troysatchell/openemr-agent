@@ -46,7 +46,6 @@
   .claim.rejected .flag { display:block; font-size:11px; font-weight:700; color:var(--rej); text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
   .refs { margin-top:5px; }
   .ref { display:inline-block; font:11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background:#eef1f5; border:1px solid var(--line); border-radius:4px; padding:0 6px; margin:0 4px 3px 0; color:#33475c; }
-  .corr { color:var(--mut); font:11px ui-monospace, SFMono-Regular, Menlo, monospace; margin-top:16px; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
 </style>
 </head>
@@ -153,19 +152,20 @@ function render(turn) {
       zone.appendChild(item);
     });
     out.appendChild(zone);
-  }
-
-  const quiet = !turn.degraded
-    && !(turn.must_not_miss || []).length
-    && !(turn.unevaluable || []).length
-    && !grounded.length && !rejected.length;
-  if (quiet) {
+  } else if (!turn.degraded) {
+    // The model produced no groundable answer to the question — make that
+    // silence legible rather than blank. Findings above (if any) are
+    // code-detected and shown regardless; this speaks only to the free-text
+    // question, which can only be answered from recorded chart data.
     out.appendChild(el("div", "banner quiet",
-      "Nothing to surface for this question — no critical findings, nothing unevaluable, no grounded statements. Silence here is a checked result, not an error."));
+      "I can only answer from what's recorded in the chart, and that isn't captured here."));
   }
 
+  // The per-turn correlation id joins the PHI-free trace to the disclosure
+  // log — not clinical content, so it is kept out of the clinician's view and
+  // stashed as a data attribute for support/audit lookups only.
   if (turn.correlation_id) {
-    out.appendChild(el("div", "corr", "correlation id: " + turn.correlation_id + " (joins the trace and disclosure logs)"));
+    out.dataset.correlationId = turn.correlation_id;
   }
 }
 
@@ -205,6 +205,13 @@ async function ask() {
 }
 
 $("ask").addEventListener("click", ask);
+// Submit on Enter; Shift+Enter inserts a newline for multi-line questions.
+$("question").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    ask();
+  }
+});
 </script>
 </body>
 </html>
