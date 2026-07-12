@@ -44,8 +44,61 @@ final class BackgroundServiceCallableAllowlist
         'send_faxsms_notifications',
     ];
 
+    /**
+     * Pure membership in the shipped, reviewed allow-list — the S6 security
+     * boundary. Only these names may run in production. This method never
+     * consults the environment; the runner uses isPermittedToRun() as its gate.
+     */
     public static function isAllowed(string $function): bool
     {
         return in_array($function, self::ALLOWED_CALLABLES, true);
+    }
+
+    /**
+     * The runtime gate the runner consults. Equals isAllowed() in production.
+     *
+     * A dev/test-only escape hatch additionally permits callables named in the
+     * OPENEMR_BACKGROUND_EXTRA_ALLOWED_CALLABLES environment variable
+     * (comma-separated). That variable is UNSET in production, so the
+     * production gate is exactly ALLOWED_CALLABLES. The seam does not widen the
+     * S6 threat model: S6 defends against a caller who can write a
+     * `background_services` DB row (rogue admin, SQL injection) but cannot set
+     * the server process environment — doing so requires shell/deploy access,
+     * which already implies code execution. It exists so the CLI integration
+     * test can exercise the runner with a probe callable without adding a
+     * test-only name to the shipped list.
+     */
+    public static function isPermittedToRun(string $function): bool
+    {
+        if (self::isAllowed($function)) {
+            return true;
+        }
+
+        return in_array($function, self::extraAllowedCallablesFromEnv(), true);
+    }
+
+    /**
+     * Parses OPENEMR_BACKGROUND_EXTRA_ALLOWED_CALLABLES. Read via getenv() (not
+     * $_ENV) so it works under this runtime's variables_order=GPCS, where $_ENV
+     * is unpopulated.
+     *
+     * @return list<string>
+     */
+    private static function extraAllowedCallablesFromEnv(): array
+    {
+        $raw = getenv('OPENEMR_BACKGROUND_EXTRA_ALLOWED_CALLABLES');
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+
+        $names = [];
+        foreach (explode(',', $raw) as $name) {
+            $trimmed = trim($name);
+            if ($trimmed !== '') {
+                $names[] = $trimmed;
+            }
+        }
+
+        return $names;
     }
 }

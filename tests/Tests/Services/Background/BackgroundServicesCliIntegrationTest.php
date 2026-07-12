@@ -69,13 +69,39 @@ class BackgroundServicesCliIntegrationTest extends TestCase
         $this->removeSentinel();
         $this->registry->unregister(self::PROBE_NAME);
         $this->registerProbe();
+
+        // S6 (AUDIT.md): the runner only executes allow-listed callables. Permit
+        // this test's probe via the dev/test-only env seam so the child process
+        // (which inherits this env) may run it, without adding a test-only name
+        // to the shipped production allow-list.
+        $this->setExtraAllowedCallablesEnv(self::PROBE_FUNCTION);
     }
 
     protected function tearDown(): void
     {
+        $this->setExtraAllowedCallablesEnv(null);
         $this->registry->unregister(self::PROBE_NAME);
         $this->removeSentinel();
         parent::tearDown();
+    }
+
+    /**
+     * Set (or clear, when null) the S6 dev/test callable-allow-list env seam.
+     * Written to putenv + $_ENV + $_SERVER so Symfony Process forwards it to the
+     * child regardless of its default-env filtering; the child reads it via
+     * getenv() in BackgroundServiceCallableAllowlist.
+     */
+    private function setExtraAllowedCallablesEnv(?string $value): void
+    {
+        $name = 'OPENEMR_BACKGROUND_EXTRA_ALLOWED_CALLABLES';
+        if ($value === null) {
+            putenv($name);
+            unset($_ENV[$name], $_SERVER[$name]);
+            return;
+        }
+        putenv($name . '=' . $value);
+        $_ENV[$name] = $value;
+        $_SERVER[$name] = $value;
     }
 
     public function testRunByNameExecutesProbeViaShell(): void
