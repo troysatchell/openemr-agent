@@ -32,6 +32,7 @@ use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirGateway;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirServiceFactory;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
+use OpenEMR\Modules\Copilot\Ingestion\DocumentIngestion;
 use OpenEMR\Modules\Copilot\Llm\AnthropicLlmClient;
 use OpenEMR\Modules\Copilot\Llm\ChartDataFlattener;
 use OpenEMR\Modules\Copilot\Llm\CopilotTask;
@@ -46,6 +47,7 @@ use OpenEMR\Modules\Copilot\Observability\ReadinessCheck;
 use OpenEMR\Modules\Copilot\Orchestration\ReadThroughChartSnapshotProvider;
 use OpenEMR\Modules\Copilot\Orchestration\TurnOrchestrator;
 use OpenEMR\Modules\Copilot\Routes\AclRequirement;
+use OpenEMR\Modules\Copilot\Routes\DocumentUploadEndpoint;
 use OpenEMR\Modules\Copilot\Routes\GuardedRouteRegistrar;
 use OpenEMR\Modules\Copilot\Routes\TurnEndpoint;
 use OpenEMR\Modules\Copilot\Synthesis\ChartSnapshotSynthesizer;
@@ -98,6 +100,7 @@ class Bootstrap
         $event->addScope('user', 'health', 'read');
         $event->addScope('user', 'ready', 'read');
         $event->addScope('user', 'turn', 'write');
+        $event->addScope('user', 'document', 'write');
     }
 
     public function registerApiRoutes(RestApiCreateEvent $event): void
@@ -197,6 +200,83 @@ class Bootstrap
                     http_response_code(400);
 
                     return ['error' => 'Invalid request: patient_uuid and question are required.'];
+                }
+            }
+        );
+
+        $registrar->register(
+            'POST /api/copilot/document',
+            // Same ACL as the turn route: the two-write amendment (attach +
+            // persist derived facts, W2_ARCHITECTURE.md §2/§1) executes as
+            // the delegated physician against the same patient-scoped
+            // clinical data the turn path reads — never a service account
+            // (S4/S6) — so it rides the identical section/value pairing.
+            new AclRequirement('patients', 'med'),
+            static function (HttpRestRequest $request): array {
+                // Delegation, never a service account (S4/S6): same
+                // principal extraction as the turn route.
+                $user = $request->getRequestUser();
+                $username = is_string($user['username'] ?? null) ? $user['username'] : '';
+                $userId = $request->getRequestUserId();
+                if (trim($username) === '' || $userId === null) {
+                    http_response_code(403);
+
+                    return ['error' => 'No authenticated user principal for this request.'];
+                }
+
+                try {
+                    $decoded = json_decode($request->getContent(), true, 16, JSON_THROW_ON_ERROR);
+                } catch (\JsonException) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be valid JSON.'];
+                }
+                if (!is_array($decoded)) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be a JSON object.'];
+                }
+
+                try {
+                    // TRO-17/18 provide the real DocumentIngestion (attach
+                    // via DocumentService + dedupe-by-hash, then VLM
+                    // extraction, §2 steps 2-5). Until then, this stub keeps
+                    // the route wired and guarded end to end — wire
+                    // validation (§10 type/size allowlist) already runs for
+                    // real — while refusing to pretend ingestion works.
+                    $ingestion = new class implements DocumentIngestion {
+                        public function attachAndExtract(
+                            PhysicianContext $physician,
+                            string $patientUuid,
+                            string $filePath,
+                            string $docType,
+                        ): array {
+                            throw new \RuntimeException('document ingestion not yet available (TRO-17/18)');
+                        }
+                    };
+                    $endpoint = new DocumentUploadEndpoint($ingestion);
+
+                    // Normalise decoded JSON to string keys — see the turn
+                    // route above for why.
+                    $input = [];
+                    foreach ($decoded as $key => $value) {
+                        $input[(string) $key] = $value;
+                    }
+
+                    return $endpoint->handle(new PhysicianContext($username, $userId), $input);
+                } catch (\DomainException) {
+                    // Generic by design — never echo internals (R11).
+                    http_response_code(400);
+
+                    return [
+                        'error' => 'Invalid request: patient_uuid, doc_type, file_path, '
+                            . 'and file_size_bytes are required.',
+                    ];
+                } catch (\RuntimeException) {
+                    // Ingestion port not yet implemented (TRO-17/18).
+                    http_response_code(501);
+
+                    return ['error' => 'Document ingestion is not yet available.'];
                 }
             }
         );
