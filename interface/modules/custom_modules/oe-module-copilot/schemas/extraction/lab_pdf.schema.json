@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-emr.org/copilot/schemas/extraction/lab_pdf.schema.json",
+  "title": "Clinical Co-Pilot lab_pdf extraction",
+  "description": "Canonical contract for a lab_pdf source document extraction (W2_ARCHITECTURE.md §3). Mirrors OpenEMR\\Modules\\Copilot\\Extraction\\LabPdfExtraction / LabAnalyteExtraction; contract tests (TRO-15) assert DTO <-> schema agreement.",
+  "type": "object",
+  "$defs": {
+    "ExtractionConfidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Per-field extraction confidence, bounded [0.0, 1.0]."
+    },
+    "SourceCitation": {
+      "type": "object",
+      "properties": {
+        "source_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["source_type", "source_id"],
+      "additionalProperties": false
+    },
+    "ExtractedField": {
+      "type": "object",
+      "description": "Present/absent marker (D1): present fields carry value + confidence + citation; absent fields carry none.",
+      "properties": {
+        "isPresent": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": ["string", "null"]
+        },
+        "confidence": {
+          "oneOf": [
+            { "$ref": "#/$defs/ExtractionConfidence" },
+            { "type": "null" }
+          ]
+        },
+        "citation": {
+          "oneOf": [
+            { "$ref": "#/$defs/SourceCitation" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "required": ["isPresent", "value", "confidence", "citation"],
+      "additionalProperties": false
+    },
+    "LabAnalyteExtraction": {
+      "type": "object",
+      "description": "A single analyte row: units are required, never inferred; collection date is defensively parsed (D0/D6).",
+      "properties": {
+        "testName": { "$ref": "#/$defs/ExtractedField" },
+        "value": { "$ref": "#/$defs/ExtractedField" },
+        "unit": { "$ref": "#/$defs/ExtractedField" },
+        "referenceRange": { "$ref": "#/$defs/ExtractedField" },
+        "abnormalFlag": { "$ref": "#/$defs/ExtractedField" },
+        "collectionDate": {
+          "type": ["string", "null"],
+          "description": "ISO 8601 date/time when parseable; null when absent or unparseable at the source."
+        }
+      },
+      "required": ["testName", "value", "unit", "referenceRange", "abnormalFlag", "collectionDate"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "documentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "analytes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/LabAnalyteExtraction" }
+    }
+  },
+  "required": ["documentId", "analytes"],
+  "additionalProperties": false
+}
