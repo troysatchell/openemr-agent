@@ -4,10 +4,16 @@
  * Lookup table from citation token to the chart's SourceRef it names
  * (T14; R6/R10; ARCHITECTURE.md §3.4).
  *
- * tokenFor() is the ONE canonical mint for the "sourceType:sourceId" token
- * format — anything that flattens a ChartSnapshot into an LLM-facing
- * payload MUST use this same method to label its citable facts, or the
- * tokens the model echoes back will never resolve.
+ * tokenFor() is the ONE canonical mint for the citation token format —
+ * anything that flattens a ChartSnapshot, a document extraction, or a
+ * retrieved guideline chunk into an LLM-facing payload MUST use this same
+ * method to label its citable facts, or the tokens the model echoes back
+ * will never resolve. The one-mint rule now spans all source classes
+ * (W2_ARCHITECTURE.md §4): a SourceRef with a null fieldOrChunkId mints the
+ * unchanged Week 1 "sourceType:sourceId" token; a SourceRef carrying a
+ * fieldOrChunkId mints "sourceType:sourceId#fieldOrChunkId" — without the
+ * fragment, two chunks of one guideline document would collapse into a
+ * single token and provenance would silently blur.
  *
  * fromChart() walks every section of a ChartSnapshot (medications, labs,
  * allergies, AND follow-ups — all four are citable) and indexes every
@@ -44,7 +50,13 @@ final readonly class ReferenceIndex
 
     public static function tokenFor(SourceRef $ref): string
     {
-        return $ref->sourceType . ':' . $ref->sourceId;
+        $base = $ref->sourceType . ':' . $ref->sourceId;
+
+        if ($ref->fieldOrChunkId === null) {
+            return $base;
+        }
+
+        return $base . '#' . $ref->fieldOrChunkId;
     }
 
     public static function fromChart(ChartSnapshot $chart): self
