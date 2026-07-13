@@ -13,6 +13,7 @@
     },
     "SourceCitation": {
       "type": "object",
+      "description": "The §4 five-field citation contract (snake_case wire names, mirroring OpenEMR\\Modules\\Copilot\\Synthesis\\SourceRef). The three Week 2 fields are always present as keys and null when not applicable.",
       "properties": {
         "source_type": {
           "type": "string",
@@ -21,9 +22,18 @@
         "source_id": {
           "type": "string",
           "minLength": 1
+        },
+        "page_or_section": {
+          "type": ["string", "null"]
+        },
+        "field_or_chunk_id": {
+          "type": ["string", "null"]
+        },
+        "quote_or_value": {
+          "type": ["string", "null"]
         }
       },
-      "required": ["source_type", "source_id"],
+      "required": ["source_type", "source_id", "page_or_section", "field_or_chunk_id", "quote_or_value"],
       "additionalProperties": false
     },
     "ExtractedField": {
