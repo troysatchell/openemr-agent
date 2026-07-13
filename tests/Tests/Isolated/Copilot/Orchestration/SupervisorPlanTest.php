@@ -179,7 +179,7 @@ class SupervisorPlanTest extends TestCase
 
         $this->assertNotEmpty($plan);
         $this->assertSame(SupervisorStepKind::ComposeAnswer, $kinds[count($kinds) - 1], 'plans always end by composing');
-        $this->assertSame(1, count(array_keys($kinds, SupervisorStepKind::ComposeAnswer, true)), 'exactly one compose step');
+        $this->assertCount(1, array_keys($kinds, SupervisorStepKind::ComposeAnswer, true), 'exactly one compose step');
         $this->assertSame($kinds, array_values(array_unique($kinds, SORT_REGULAR)), 'no step kind repeats — the graph is acyclic');
 
         foreach ($plan as $step) {

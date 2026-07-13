@@ -34,8 +34,20 @@ use PHPUnit\Framework\TestCase;
 
 class DocumentUploadEndpointTest extends TestCase
 {
-    /** @var list<array{patientUuid: string, filePath: string, docType: string}> */
-    private array $portCalls = [];
+    private RecordingDocumentIngestion $port;
+
+    protected function setUp(): void
+    {
+        $this->port = new RecordingDocumentIngestion();
+    }
+
+    /**
+     * @return list<array{patientUuid: string, filePath: string, docType: string}>
+     */
+    private function portCalls(): array
+    {
+        return $this->port->calls;
+    }
 
     private function physician(): PhysicianContext
     {
@@ -44,26 +56,7 @@ class DocumentUploadEndpointTest extends TestCase
 
     private function endpoint(): DocumentUploadEndpoint
     {
-        $calls = &$this->portCalls;
-        $port = new class ($calls) implements DocumentIngestion {
-            /** @param list<array{patientUuid: string, filePath: string, docType: string}> $calls */
-            public function __construct(private array &$calls)
-            {
-            }
-
-            public function attachAndExtract(
-                PhysicianContext $physician,
-                string $patientUuid,
-                string $filePath,
-                string $docType,
-            ): array {
-                $this->calls[] = ['patientUuid' => $patientUuid, 'filePath' => $filePath, 'docType' => $docType];
-
-                return ['document_id' => 'doc-99', 'extraction_status' => 'pending'];
-            }
-        };
-
-        return new DocumentUploadEndpoint($port);
+        return new DocumentUploadEndpoint($this->port);
     }
 
     /**
@@ -85,9 +78,9 @@ class DocumentUploadEndpointTest extends TestCase
 
         $this->assertSame('doc-99', $result['document_id']);
         $this->assertSame('pending', $result['extraction_status']);
-        $this->assertCount(1, $this->portCalls);
-        $this->assertSame('lab_pdf', $this->portCalls[0]['docType']);
-        $this->assertSame('/uploads/labs/panel-2026-07-01.pdf', $this->portCalls[0]['filePath']);
+        $this->assertCount(1, $this->portCalls());
+        $this->assertSame('lab_pdf', $this->portCalls()[0]['docType']);
+        $this->assertSame('/uploads/labs/panel-2026-07-01.pdf', $this->portCalls()[0]['filePath']);
     }
 
     public function testIntakeFormIsAnAcceptedDocType(): void
@@ -141,7 +134,7 @@ class DocumentUploadEndpointTest extends TestCase
             // expected
         }
 
-        $this->assertSame([], $this->portCalls, 'the ingestion port must never run on refused input');
+        $this->assertSame([], $this->portCalls(), 'the ingestion port must never run on refused input');
     }
 
     public function testExactlyTenMiBIsAccepted(): void
@@ -152,5 +145,25 @@ class DocumentUploadEndpointTest extends TestCase
         $result = $this->endpoint()->handle($this->physician(), $input);
 
         $this->assertSame('doc-99', $result['document_id']);
+    }
+}
+
+/**
+ * Recording spy for the DocumentIngestion port — frozen-test support only.
+ */
+final class RecordingDocumentIngestion implements DocumentIngestion
+{
+    /** @var list<array{patientUuid: string, filePath: string, docType: string}> */
+    public array $calls = [];
+
+    public function attachAndExtract(
+        PhysicianContext $physician,
+        string $patientUuid,
+        string $filePath,
+        string $docType,
+    ): array {
+        $this->calls[] = ['patientUuid' => $patientUuid, 'filePath' => $filePath, 'docType' => $docType];
+
+        return ['document_id' => 'doc-99', 'extraction_status' => 'pending'];
     }
 }
