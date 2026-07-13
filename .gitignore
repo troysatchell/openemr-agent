@@ -56,6 +56,9 @@ tmp/
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 
+# Codacy CLI wrapper (auto-generated tooling, not project source)
+.codacy/
+
 # Local founder-only working notes (submission hygiene — keep out of the repo)
 FOUNDER_ACTIONS.md
 
