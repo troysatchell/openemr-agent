@@ -52,7 +52,7 @@ class InputKeyedReplayTransportTest extends TestCase
         [$status, $body] = $transport($this->request());
 
         $this->assertSame(200, $status);
-        $this->assertSame('recorded', $body['content'][0]['text']);
+        $this->assertSame(['content' => [['type' => 'text', 'text' => 'recorded']]], $body);
     }
 
     public function testKeyOrderCannotDodgeTheSeam(): void
@@ -87,8 +87,10 @@ class InputKeyedReplayTransportTest extends TestCase
             InputKeyedReplayTransport::keyFor($this->request()) => [200, ['ok' => true]],
         ]);
 
-        $corrupted = $this->request();
-        $corrupted['messages'][0]['content'] = 'Wh4t supp0rts the st4tin rec0mmendation?';
+        $corrupted = [
+            'model' => 'claude-opus-4-8',
+            'messages' => [['role' => 'user', 'content' => 'Wh4t supp0rts the st4tin rec0mmendation?']],
+        ];
 
         $this->expectException(UnexpectedVendorCallException::class);
         $transport($corrupted);

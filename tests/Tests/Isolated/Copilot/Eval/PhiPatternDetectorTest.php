@@ -87,7 +87,6 @@ class PhiPatternDetectorTest extends TestCase
 
         $this->assertCount(1, $violations);
         $violation = $violations[0];
-        $this->assertInstanceOf(PhiViolation::class, $violation);
         $this->assertSame(2, $violation->lineNumber);
         $this->assertNotSame('', trim($violation->rule));
     }

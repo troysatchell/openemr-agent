@@ -33,6 +33,9 @@ use PHPUnit\Framework\TestCase;
 
 class BaselineComparatorTest extends TestCase
 {
+    /**
+     * @param array<string, array{int, int}> $scores
+     */
     private function runResult(array $scores): EvalRunResult
     {
         $categoryScores = [];
