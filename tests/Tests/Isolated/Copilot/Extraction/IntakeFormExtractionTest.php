@@ -83,7 +83,6 @@ class IntakeFormExtractionTest extends TestCase
     public function testNonExtractedFieldInAListIsRejected(): void
     {
         $this->expectException(\Throwable::class);
-        /** @phpstan-ignore-next-line intentional bad input for the frozen guard */
         new IntakeFormExtraction(
             'doc-7',
             $this->field('chest pain'),
