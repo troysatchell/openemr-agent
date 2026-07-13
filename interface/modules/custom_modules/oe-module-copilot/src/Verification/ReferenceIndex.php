@@ -24,6 +24,17 @@
  * back) is untrusted free text (AUDIT D1); fuzzy matching here would
  * manufacture provenance that was never actually cited.
  *
+ * fromRefs() is the §4 one-mint entry point for non-chart source classes:
+ * document extractions, guideline chunks, and derived-observation refs all
+ * enter the SAME index the citation tokens are minted from — fromChart()
+ * remains the chart-snapshot path, unchanged. Every element must be a
+ * SourceRef (parse-boundary discipline: this is a boundary between untrusted
+ * assembly code and the verifier, so the shape is checked, not assumed); a
+ * non-SourceRef element throws rather than silently coercing or skipping.
+ * Duplicate tokens collapse to the FIRST ref supplied (first-write-wins) —
+ * the opposite of fromChart()'s last-write-wins-by-iteration-order; callers
+ * control precedence by ordering the input list.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -82,6 +93,33 @@ final readonly class ReferenceIndex
             foreach ($followUp->sources as $source) {
                 $sourcesByToken[self::tokenFor($source)] = $source;
             }
+        }
+
+        return new self($sourcesByToken);
+    }
+
+    /**
+     * The refs arrive untyped at this boundary (extraction output and
+     * retrieval results are assembled from untrusted parses): elements are
+     * validated with instanceof, never assumed from a declared type.
+     *
+     * @param list<mixed> $refs
+     */
+    public static function fromRefs(array $refs): self
+    {
+        $sourcesByToken = [];
+
+        foreach ($refs as $ref) {
+            if (!$ref instanceof SourceRef) {
+                throw new \DomainException('ReferenceIndex::fromRefs requires every element to be a SourceRef');
+            }
+
+            $token = self::tokenFor($ref);
+            if (isset($sourcesByToken[$token])) {
+                continue;
+            }
+
+            $sourcesByToken[$token] = $ref;
         }
 
         return new self($sourcesByToken);
