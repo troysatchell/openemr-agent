@@ -62,7 +62,9 @@ class CorpusIndexSchemaTest extends TestCase
             $embeddingDdl,
             'the dense leg needs a native VECTOR column at the embedding dimension',
         );
-        $this->assertStringContainsStringIgnoringCase('VECTOR INDEX', $embeddingDdl, 'dense search needs the native vector index');
+        // MariaDB normalizes `VECTOR INDEX (col)` DDL to `VECTOR KEY ...` in
+        // SHOW CREATE TABLE output (same normalization as FULLTEXT KEY).
+        $this->assertStringContainsStringIgnoringCase('VECTOR KEY', $embeddingDdl, 'dense search needs the native vector index');
         $this->assertStringContainsStringIgnoringCase('NOT NULL', $embeddingDdl);
     }
 
