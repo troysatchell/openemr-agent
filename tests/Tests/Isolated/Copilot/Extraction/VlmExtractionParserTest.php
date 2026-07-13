@@ -57,6 +57,8 @@ class VlmExtractionParserTest extends TestCase
     }
 
     /**
+     * @param array<string, mixed>|null $unit
+     *
      * @return array<string, mixed>
      */
     private function analyte(?array $unit = null): array
@@ -89,10 +91,14 @@ class VlmExtractionParserTest extends TestCase
         $this->assertSame('Potassium', $analyte->testName->value);
         $this->assertSame('6.8', $analyte->value->value);
         $this->assertSame('mmol/L', $analyte->unit->value);
-        $this->assertSame(0.9, $analyte->value->confidence?->value);
-        $this->assertSame('doc-42', $analyte->value->citation?->sourceId);
-        $this->assertSame('analytes[0].value', $analyte->value->citation?->fieldOrChunkId);
-        $this->assertSame('2026-07-01', $analyte->collectionDate?->format('Y-m-d'));
+        $this->assertNotNull($analyte->value->confidence);
+        $this->assertSame(0.9, $analyte->value->confidence->value);
+        $citation = $analyte->value->citation;
+        $this->assertNotNull($citation);
+        $this->assertSame('doc-42', $citation->sourceId);
+        $this->assertSame('analytes[0].value', $citation->fieldOrChunkId);
+        $this->assertNotNull($analyte->collectionDate);
+        $this->assertSame('2026-07-01', $analyte->collectionDate->format('Y-m-d'));
     }
 
     public function testAbsentWireFieldBecomesAbsentExtractedField(): void
@@ -137,8 +143,9 @@ class VlmExtractionParserTest extends TestCase
 
     public function testOutOfRangeConfidenceThrows(): void
     {
-        $wire = $this->labPdfWire();
-        $wire['analytes'][0]['value']['confidence'] = 1.5;
+        $badValue = $this->presentField('6.8');
+        $badValue['confidence'] = 1.5;
+        $wire = ['documentId' => 'doc-42', 'analytes' => [array_merge($this->analyte(), ['value' => $badValue])]];
 
         $this->expectException(ExtractionParseException::class);
         VlmExtractionParser::parseLabPdf((string) json_encode($wire));
@@ -146,8 +153,15 @@ class VlmExtractionParserTest extends TestCase
 
     public function testCitationMissingARequiredKeyThrows(): void
     {
-        $wire = $this->labPdfWire();
-        unset($wire['analytes'][0]['value']['citation']['quote_or_value']);
+        $badValue = $this->presentField('6.8');
+        $badValue['citation'] = [
+            'source_type' => 'lab_pdf',
+            'source_id' => 'doc-42',
+            'page_or_section' => '1',
+            'field_or_chunk_id' => 'analytes[0].value',
+            // quote_or_value deliberately missing
+        ];
+        $wire = ['documentId' => 'doc-42', 'analytes' => [array_merge($this->analyte(), ['value' => $badValue])]];
 
         $this->expectException(ExtractionParseException::class);
         VlmExtractionParser::parseLabPdf((string) json_encode($wire));
