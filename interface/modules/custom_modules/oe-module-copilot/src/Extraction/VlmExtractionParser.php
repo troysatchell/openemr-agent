@@ -59,7 +59,7 @@ final class VlmExtractionParser
         $root = self::decodeMap($json, 'lab_pdf root');
         self::assertExactKeys($root, ['documentId', 'analytes'], 'lab_pdf root');
 
-        $documentId = self::extractRequiredString($root, 'documentId', 'lab_pdf root');
+        $documentId = self::extractUntrustedDocumentId($root, 'lab_pdf root');
         $analytesWire = self::extractList($root, 'analytes', 'lab_pdf root');
 
         $analytes = [];
@@ -86,7 +86,7 @@ final class VlmExtractionParser
             'demographics',
         ], 'intake_form root');
 
-        $documentId = self::extractRequiredString($root, 'documentId', 'intake_form root');
+        $documentId = self::extractUntrustedDocumentId($root, 'intake_form root');
         $chiefConcern = self::parseExtractedField($root['chiefConcern'], 'chiefConcern');
         $currentMedications = self::parseExtractedFieldGroup($root, 'currentMedications');
         $allergies = self::parseExtractedFieldGroup($root, 'allergies');
@@ -287,6 +287,26 @@ final class VlmExtractionParser
                 throw new ExtractionParseException(sprintf('"%s" is missing required key "%s"', $fieldPath, $key));
             }
         }
+    }
+
+    /**
+     * The wire documentId is MODEL OUTPUT and therefore untrusted by design:
+     * the ingestion service discards it and stamps the real attached
+     * document id before anything persists. Rejecting an otherwise-perfect
+     * extraction because the model chose a blank placeholder enforces
+     * provenance on a value that is thrown away (live-smoke failure,
+     * 2026-07-14: the model faithfully copied an empty-string example and
+     * every extraction whole-failed at the DTO). A blank id normalizes to
+     * the '0' placeholder here, at the untrusted boundary; the DTO's
+     * non-blank rule stays intact for every trusted construction path.
+     *
+     * @param array<array-key, mixed> $data
+     */
+    private static function extractUntrustedDocumentId(array $data, string $fieldPath): string
+    {
+        $documentId = self::extractRequiredString($data, 'documentId', $fieldPath);
+
+        return trim($documentId) === '' ? '0' : $documentId;
     }
 
     /**
