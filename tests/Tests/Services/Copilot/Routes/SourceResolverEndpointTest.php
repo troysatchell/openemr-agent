@@ -218,12 +218,8 @@ class SourceResolverEndpointTest extends TestCase
         $this->assertSame('guideline', $preview['type']);
         $this->assertSame('protocol-htn-v1', $preview['source_id']);
         $this->assertSame('htn.bp-target', $preview['chunk_id']);
-        $heading = $preview['heading'] ?? null;
-        $this->assertIsString($heading);
-        $this->assertNotSame('', trim($heading));
-        $snippet = $preview['snippet'] ?? null;
-        $this->assertIsString($snippet);
-        $this->assertStringContainsString('130/80', $snippet, 'the snippet is the real chunk body, not a placeholder');
+        $this->assertNotSame('', trim($preview['heading']));
+        $this->assertStringContainsString('130/80', $preview['snippet'], 'the snippet is the real chunk body, not a placeholder');
     }
 
     public function testDocumentExtractionTokenResolvesToTheAttachedDocument(): void
@@ -239,9 +235,7 @@ class SourceResolverEndpointTest extends TestCase
 
         $this->assertSame('document', $preview['type']);
         $this->assertSame($documentId, $preview['document_id']);
-        $filename = $preview['filename'] ?? null;
-        $this->assertIsString($filename);
-        $this->assertNotSame('', trim($filename));
+        $this->assertNotSame('', trim($preview['filename']));
         $this->assertSame('2', $preview['page'], 'the cited page rides the preview so the viewer can open to it');
         $this->assertSame('4.4', $preview['quote'], 'the cited value, byte-exact — the thing the clinician verifies');
         $this->assertSame('analytes[0].value', $preview['field'], 'the schema field path is the citation anchor');
@@ -273,9 +267,7 @@ class SourceResolverEndpointTest extends TestCase
 
         $this->assertSame('detector', $preview['type']);
         $this->assertSame('panic-potassium-high', $preview['finding_id']);
-        $label = $preview['label'] ?? null;
-        $this->assertIsString($label);
-        $this->assertNotSame('', trim($label));
+        $this->assertNotSame('', trim($preview['label']));
     }
 
     public function testChartTokenResolvesToKindAndLabelOnly(): void
