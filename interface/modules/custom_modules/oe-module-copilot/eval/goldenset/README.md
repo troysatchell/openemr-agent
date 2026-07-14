@@ -147,7 +147,10 @@ planned — see below) → one `ReferenceIndex` mint over ALL source classes →
   case bug, never silently reconciled. `has_pending_unextracted_document` is
   always false in this set (the extraction path is graded by `extraction`
   cases; the pending-doc turn path is TRO-32's frozen suite).
-- `inputs.question`, `inputs.top_k`.
+- `inputs.question`, `inputs.top_k`; `inputs.degrade` and
+  `inputs.fixture_aim_chunk_ids` carry the same semantics as on `retrieval`
+  cases (the evidence worker's service is built with the degraded/aimed
+  transports for this case).
 - `inputs.chart`: the chart fixture — `labs` (`analyte`, `value`, `unit`,
   `ref_id`, optional `quote`), `medications` (`name`, `ref_id`, optional
   `quote`), `allergies` (`substance`, `ref_id`, optional `quote`),
