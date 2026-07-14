@@ -66,6 +66,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
 
+    env:
+      # ./cli install's container bootstrap requires an environment name
+      # (firehed/container AutoDetect) — same setting integration-tests.yml
+      # applies workflow-wide; scoped to this job since the isolated
+      # contract job never boots the app container.
+      ENVIRONMENT: ci
+
     services:
       mysql:
         image: mariadb:11.8
