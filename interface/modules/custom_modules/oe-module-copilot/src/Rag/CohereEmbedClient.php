@@ -64,12 +64,16 @@ final readonly class CohereEmbedClient
      *         endpoint returns a non-200 status, or the response body does
      *         not carry exactly one float vector per input text.
      */
-    public function embed(array $texts): array
+    public function embed(array $texts, string $inputType = 'search_document'): array
     {
+        if (!in_array($inputType, ['search_document', 'search_query'], true)) {
+            throw new \DomainException('CohereEmbedClient inputType must be search_document or search_query');
+        }
+
         $requestBody = [
             'model' => $this->modelId,
             'texts' => $texts,
-            'input_type' => 'search_document',
+            'input_type' => $inputType,
             'embedding_types' => ['float'],
         ];
 

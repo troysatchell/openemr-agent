@@ -18,15 +18,18 @@
  * gap from model weights (§5 "Degradation"), and it never spends a vendor
  * call on nothing to rank.
  *
- * Degradation fallbacks are explicitly NOT this class's scope: a reranker
- * failure (RerankUnavailableException) and a query-time embedding
- * unreachable state (hybrid falling back to keyword-only, flagged in the
- * trace) are TRO-28's wiring. Likewise, acquiring `$queryEmbeddingVecText`
- * itself (calling the embed endpoint for the physician's free-text
- * question) is TRO-28/32's wiring — this class only ever takes it as an
- * already-computed, optional precomputed vector literal (MariaDB
- * `VEC_FromText()` argument text) and skips the dense leg entirely when it
- * is null.
+ * `retrieve()` is the frozen TRO-27 contract: candidate union → rerank →
+ * top-k, uncaught rerank failures propagate as `RerankUnavailableException`.
+ * `retrieveWithDegradation()` (TRO-28; PS-12) shares the same candidate-union
+ * internals but falls back to candidate-union order (flagged) when the
+ * reranker is unreachable, instead of throwing — "worse results beat no
+ * results, but never silently" (§5 "Degradation"). Acquiring
+ * `$queryEmbeddingVecText` itself (calling the embed endpoint for the
+ * physician's free-text question) and the query-time embedder-unreachable
+ * fallback are `EvidenceRetrievalService`'s wiring (TRO-28) — this class only
+ * ever takes the vector as an already-computed, optional precomputed vector
+ * literal (MariaDB `VEC_FromText()` argument text) and skips the dense leg
+ * entirely when it is null.
  *
  * Zero RAG on the snapshot/pre-chart path (§5): this class is never called
  * from that path — enforcement of that boundary lives in the supervisor
@@ -60,6 +63,43 @@ final class HybridRetriever
      */
     public function retrieve(string $query, ?string $queryEmbeddingVecText, int $topK): array
     {
+        $this->validateQueryAndTopK($query, $topK);
+
+        $candidates = $this->candidateUnion($query, $queryEmbeddingVecText);
+        if ($candidates === []) {
+            return [];
+        }
+
+        return $this->rerankCandidates($query, $candidates, $topK);
+    }
+
+    /**
+     * TRO-28/PS-12: same candidate-union internals as `retrieve()`, but a
+     * reranker failure falls back to candidate-union order (flagged
+     * `rerankDegraded`) instead of letting `RerankUnavailableException`
+     * propagate. `denseDegraded` on the returned outcome is always `false`
+     * here — this method only ever sees a vector-or-null and has no way to
+     * know *why* it is null; `EvidenceRetrievalService` decides that flag
+     * from the embed-call outcome and composes the final `RetrievalOutcome`.
+     */
+    public function retrieveWithDegradation(string $query, ?string $queryEmbeddingVecText, int $topK): RetrievalOutcome
+    {
+        $this->validateQueryAndTopK($query, $topK);
+
+        $candidates = $this->candidateUnion($query, $queryEmbeddingVecText);
+        if ($candidates === []) {
+            return new RetrievalOutcome([], false, false);
+        }
+
+        try {
+            return new RetrievalOutcome($this->rerankCandidates($query, $candidates, $topK), false, false);
+        } catch (RerankUnavailableException) {
+            return new RetrievalOutcome($this->fallbackOrderedChunks($candidates, $topK), false, true);
+        }
+    }
+
+    private function validateQueryAndTopK(string $query, int $topK): void
+    {
         if (trim($query) === '') {
             throw new \DomainException('HybridRetriever query must be non-blank');
         }
@@ -67,7 +107,17 @@ final class HybridRetriever
         if ($topK < 1) {
             throw new \DomainException('HybridRetriever topK must be >= 1');
         }
+    }
 
+    /**
+     * Keyword + dense candidates, deduped by chunk id (keyword leg wins ties,
+     * matching the pre-refactor union order) — the shared internals behind
+     * both `retrieve()` and `retrieveWithDegradation()`.
+     *
+     * @return list<array{chunk_id: string, source_id: string, heading: string, body: string}>
+     */
+    private function candidateUnion(string $query, ?string $queryEmbeddingVecText): array
+    {
         $candidatesByChunkId = [];
         foreach ($this->keywordCandidates($query) as $candidate) {
             $candidatesByChunkId[$candidate['chunk_id']] ??= $candidate;
@@ -79,11 +129,36 @@ final class HybridRetriever
             }
         }
 
-        if ($candidatesByChunkId === []) {
-            return [];
+        return array_values($candidatesByChunkId);
+    }
+
+    /**
+     * Reranker-unreachable fallback (PS-12): candidates in union order
+     * (keyword leg first, then dense-only additions), sliced to `$topK`, with
+     * a deterministic descending score so "highest relevance first" stays a
+     * coherent statement about the returned list even without a real rerank
+     * score. The frozen degradation suite asserts count + flags only, not
+     * these score values.
+     *
+     * @param list<array{chunk_id: string, source_id: string, heading: string, body: string}> $candidates
+     *
+     * @return list<RetrievedChunk> at most `$topK`, union order
+     */
+    private function fallbackOrderedChunks(array $candidates, int $topK): array
+    {
+        $count = count($candidates);
+        $chunks = [];
+        foreach (array_slice($candidates, 0, $topK) as $position => $candidate) {
+            $chunks[] = new RetrievedChunk(
+                $candidate['chunk_id'],
+                $candidate['source_id'],
+                $candidate['heading'],
+                $candidate['body'],
+                1.0 - ($position * (1.0 / max($count, 1))),
+            );
         }
 
-        return $this->rerankCandidates($query, array_values($candidatesByChunkId), $topK);
+        return $chunks;
     }
 
     /**
