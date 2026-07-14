@@ -113,14 +113,20 @@ class SupervisedTurnDispatcherTest extends TestCase
 
         $this->dispatcher()->dispatch($this->physician(), $this->state(pendingDoc: true, evidence: true), 42, 'q', 5, $turn);
 
-        $this->assertNotNull($this->intake->span);
-        $this->assertSame($turn->correlationId, $this->intake->span->correlationId, 'the correlation ID is carried explicitly (S4)');
-        $this->assertSame($turn->spanId, $this->intake->span->parentSpanId);
-        $this->assertNotSame($turn->spanId, $this->intake->span->spanId);
+        $intakeSpan = $this->intake->span;
+        if ($intakeSpan === null) {
+            $this->fail('the intake worker never received its child span');
+        }
+        $this->assertSame($turn->correlationId, $intakeSpan->correlationId, 'the correlation ID is carried explicitly (S4)');
+        $this->assertSame($turn->spanId, $intakeSpan->parentSpanId);
+        $this->assertNotSame($turn->spanId, $intakeSpan->spanId);
 
-        $this->assertNotNull($this->evidence->span);
-        $this->assertSame($turn->spanId, $this->evidence->span->parentSpanId);
-        $this->assertNotSame($this->intake->span->spanId, $this->evidence->span->spanId, 'sibling workers get distinct spans');
+        $evidenceSpan = $this->evidence->span;
+        if ($evidenceSpan === null) {
+            $this->fail('the evidence worker never received its child span');
+        }
+        $this->assertSame($turn->spanId, $evidenceSpan->parentSpanId);
+        $this->assertNotSame($intakeSpan->spanId, $evidenceSpan->spanId, 'sibling workers get distinct spans');
     }
 
     public function testSnapshotStateDispatchesNoWorkers(): void
@@ -165,8 +171,11 @@ class SupervisedTurnDispatcherTest extends TestCase
         }
 
         $steps = $this->recordedSteps();
-        $this->assertContains('handoff.evidence-retriever', $steps);
-        [, $failed] = $this->recorder->records[array_search('handoff.evidence-retriever', $steps, true)];
+        $index = array_search('handoff.evidence-retriever', $steps, true);
+        if (!is_int($index)) {
+            $this->fail('the failed handoff was never recorded');
+        }
+        [, $failed] = $this->recorder->records[$index];
         $this->assertSame(StepOutcome::Failed, $failed->outcome);
         $this->assertNotNull($failed->errorClass, 'a failed handoff names its error class — silence would hide what failed');
     }
