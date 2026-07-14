@@ -1,0 +1,61 @@
+{
+    "id": "citation-quote-preserved-verbatim",
+    "kind": "turn",
+    "category": "citation",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Quote drift between mint and resolution — quote_or_value must return the flagged value byte-identical; a rounded or reformatted quote breaks value-level verification.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": true,
+            "physician_engaged_critical_finding": false
+        },
+        "question": "What was the most recent potassium?",
+        "top_k": 5,
+        "chart": {
+            "labs": [
+                {
+                    "analyte": "Potassium",
+                    "value": 6.8,
+                    "unit": "mmol/L",
+                    "ref_id": "lab-potassium",
+                    "quote": "6.8 mmol/L"
+                }
+            ],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": [
+            {
+                "text": "The most recent potassium resulted at 6.8 mmol/L.",
+                "cites": [
+                    {
+                        "source_type": "procedure_result",
+                        "source_id": "lab-potassium"
+                    }
+                ]
+            }
+        ]
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "ComposeAnswer"
+        ],
+        "grounded_claim_indexes": [
+            0
+        ],
+        "rejected_claim_indexes": [],
+        "grounded_quotes": {
+            "0": "6.8 mmol/L"
+        }
+    }
+}

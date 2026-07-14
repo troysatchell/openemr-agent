@@ -192,7 +192,13 @@ final class HybridRetriever
     }
 
     /**
-     * Keyword leg: FULLTEXT natural-language match over heading + body.
+     * Keyword leg: FULLTEXT natural-language match over heading + body,
+     * relevance-ordered with a chunk_id tiebreak. Without the ORDER BY,
+     * LIMIT takes an ARBITRARY subset in an unstable order — the same
+     * rebuilt index can return the same logical candidates in a different
+     * order across runs, which both ignores relevance and breaks the
+     * deterministic-replay property the eval gate's input-keyed vendor
+     * fixtures depend on (W2_ARCHITECTURE.md §7; PS-2).
      *
      * @return list<array{chunk_id: string, source_id: string, heading: string, body: string}>
      */
@@ -201,8 +207,9 @@ final class HybridRetriever
         $rows = QueryUtils::fetchRecords(
             'SELECT chunk_id, source_id, heading, body FROM ' . CorpusIndexSchema::CHUNK_TABLE
                 . ' WHERE MATCH(heading, body) AGAINST(? IN NATURAL LANGUAGE MODE)'
+                . ' ORDER BY MATCH(heading, body) AGAINST(? IN NATURAL LANGUAGE MODE) DESC, chunk_id ASC'
                 . ' LIMIT ' . self::CANDIDATE_LIMIT,
-            [$query],
+            [$query, $query],
         );
 
         return $this->narrowCandidateRows($rows);

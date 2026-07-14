@@ -1,0 +1,50 @@
+{
+    "id": "composition-unengaged-finding-never-fires",
+    "kind": "turn",
+    "category": "composition",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "An unengaged critical flag firing the edge — presence alone must never trigger retrieval; engagement is the second condition, and without it the turn composes from the detector alone.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. W2_ARCHITECTURE.md §6: the edge needs presence AND engagement.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": true,
+            "physician_engaged_critical_finding": false
+        },
+        "question": "Anything else to review today?",
+        "top_k": 5,
+        "chart": {
+            "labs": [
+                {
+                    "analyte": "Potassium",
+                    "value": 6.8,
+                    "unit": "mmol/L",
+                    "ref_id": "lab-potassium",
+                    "quote": "6.8 mmol/L"
+                }
+            ],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": []
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "ComposeAnswer"
+        ],
+        "retrieval_step_count": 0,
+        "vendor_calls": {
+            "embed": 0,
+            "rerank": 0
+        },
+        "grounded_claim_indexes": [],
+        "rejected_claim_indexes": []
+    }
+}

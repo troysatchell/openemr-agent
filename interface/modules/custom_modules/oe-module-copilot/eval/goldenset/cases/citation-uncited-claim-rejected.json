@@ -1,0 +1,51 @@
+{
+    "id": "citation-uncited-claim-rejected",
+    "kind": "turn",
+    "category": "citation",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "no_phi_in_logs",
+        "safe_refusal"
+    ],
+    "_guards_against": "Uncited prose surviving verification — a fluent, plausible, citation-free sentence reaching the physician as if grounded.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": false,
+            "physician_engaged_critical_finding": false
+        },
+        "question": "How is this patient doing overall?",
+        "top_k": 5,
+        "chart": {
+            "labs": [],
+            "medications": [
+                {
+                    "name": "Warfarin 5mg Tablet",
+                    "ref_id": "med-warfarin",
+                    "quote": "Warfarin 5mg Tablet"
+                }
+            ],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": [
+            {
+                "text": "The patient's condition has been stable on current therapy for six months.",
+                "cites": []
+            }
+        ]
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "ComposeAnswer"
+        ],
+        "grounded_claim_indexes": [],
+        "rejected_claim_indexes": [
+            0
+        ]
+    }
+}

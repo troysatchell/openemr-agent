@@ -1,0 +1,28 @@
+{
+    "id": "retrieval-topk-respected",
+    "kind": "retrieval",
+    "category": "retrieval",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Top-k off-by-one — k+1 results leaking past the requested budget, the named in-reach regression class from W2_ARCHITECTURE.md §7.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Ground truth chunk: lipids.statin-primary-high (protocol-lipids-v1, derived from USPSTF 2022 statin).",
+    "inputs": {
+        "question": "statin therapy for primary prevention of cardiovascular disease",
+        "top_k": 3,
+        "fixture_aim_chunk_ids": [
+            "lipids.statin-primary-high"
+        ]
+    },
+    "expected": {
+        "chunk_ids_in_top_k": [
+            "lipids.statin-primary-high"
+        ],
+        "top_chunk_id": null,
+        "max_results": 3,
+        "dense_degraded": false,
+        "rerank_degraded": false
+    }
+}

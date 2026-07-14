@@ -1,0 +1,71 @@
+{
+    "id": "citation-multiple-sources-one-claim",
+    "kind": "turn",
+    "category": "citation",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Multi-citation collapse to the first reference — a claim grounded in two sources surfacing with one, silently weakening the provenance the physician verifies.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": false,
+            "physician_engaged_critical_finding": false
+        },
+        "question": "Is the anticoagulated patient's potassium current?",
+        "top_k": 5,
+        "chart": {
+            "labs": [
+                {
+                    "analyte": "Potassium",
+                    "value": 4.4,
+                    "unit": "mmol/L",
+                    "ref_id": "lab-potassium",
+                    "quote": "4.4 mmol/L"
+                }
+            ],
+            "medications": [
+                {
+                    "name": "Warfarin 5mg Tablet",
+                    "ref_id": "med-warfarin",
+                    "quote": "Warfarin 5mg Tablet"
+                }
+            ],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": [
+            {
+                "text": "The patient is on warfarin and the latest potassium is 4.4 mmol/L.",
+                "cites": [
+                    {
+                        "source_type": "lists",
+                        "source_id": "med-warfarin"
+                    },
+                    {
+                        "source_type": "procedure_result",
+                        "source_id": "lab-potassium"
+                    }
+                ]
+            }
+        ]
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "ComposeAnswer"
+        ],
+        "grounded_claim_indexes": [
+            0
+        ],
+        "rejected_claim_indexes": [],
+        "grounded_source_counts": {
+            "0": 2
+        }
+    }
+}

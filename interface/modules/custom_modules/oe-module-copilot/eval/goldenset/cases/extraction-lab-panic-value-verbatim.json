@@ -1,0 +1,86 @@
+{
+    "id": "extraction-lab-panic-value-verbatim",
+    "kind": "extraction",
+    "category": "extraction",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs",
+        "schema_valid"
+    ],
+    "_guards_against": "Silent normalization or rounding of a panic value at ingestion — the value a later turn's detector must fire on has to arrive byte-identical, or the miss happens upstream of the detector.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Potassium 6.8 mmol/L exceeds the ARUP-derived panic threshold (detector draft tables are threshold authority; ARUP CORP-APPEND-0104A Rev. 46).",
+    "inputs": {
+        "doc_type": "lab_pdf",
+        "filename": "stat-k.pdf",
+        "document_bytes": "%PDF-1.7 goldenset extraction-lab-panic-value-verbatim synthetic fixture bytes\n",
+        "vlm_wire": {
+            "documentId": "999999",
+            "analytes": [
+                {
+                    "testName": {
+                        "isPresent": true,
+                        "value": "Potassium",
+                        "confidence": 0.97,
+                        "citation": {
+                            "source_type": "lab_pdf",
+                            "source_id": "999999",
+                            "page_or_section": "1",
+                            "field_or_chunk_id": "analytes[0].testName",
+                            "quote_or_value": "Potassium"
+                        }
+                    },
+                    "value": {
+                        "isPresent": true,
+                        "value": "6.8",
+                        "confidence": 0.96,
+                        "citation": {
+                            "source_type": "lab_pdf",
+                            "source_id": "999999",
+                            "page_or_section": "1",
+                            "field_or_chunk_id": "analytes[0].value",
+                            "quote_or_value": "6.8"
+                        }
+                    },
+                    "unit": {
+                        "isPresent": true,
+                        "value": "mmol/L",
+                        "confidence": 0.95,
+                        "citation": {
+                            "source_type": "lab_pdf",
+                            "source_id": "999999",
+                            "page_or_section": "1",
+                            "field_or_chunk_id": "analytes[0].unit",
+                            "quote_or_value": "mmol/L"
+                        }
+                    },
+                    "referenceRange": {
+                        "isPresent": false,
+                        "value": null,
+                        "confidence": null,
+                        "citation": null
+                    },
+                    "abnormalFlag": {
+                        "isPresent": false,
+                        "value": null,
+                        "confidence": null,
+                        "citation": null
+                    },
+                    "collectionDate": "2026-07-01"
+                }
+            ]
+        }
+    },
+    "expected": {
+        "extraction_status": "extracted",
+        "document_attached": true,
+        "lab_rows": [
+            {
+                "test_name": "Potassium",
+                "value": "6.8",
+                "unit": "mmol/L",
+                "collection_date": "2026-07-01"
+            }
+        ]
+    }
+}
