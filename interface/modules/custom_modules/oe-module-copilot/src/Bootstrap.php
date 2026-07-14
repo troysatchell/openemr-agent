@@ -140,7 +140,14 @@ class Bootstrap
         $event->addScope('user', 'ready', 'read');
         $event->addScope('user', 'turn', 'write');
         $event->addScope('user', 'document', 'write');
-        $event->addScope('user', 'source', 'read');
+        // 'source' is a POST route (the citation token rides the request
+        // body), and the core dispatcher derives a POST's required action as
+        // create (checked as `user/source.c`). Declaring it 'write' — not
+        // 'read' — is what makes that check satisfiable; a client granted
+        // `user/source.read` fails the create-action check (live smoke,
+        // 2026-07-14). Semantically it is still a read-only resolve;
+        // tightening the route to a read-scoped verb is tracked separately.
+        $event->addScope('user', 'source', 'write');
     }
 
     public function registerApiRoutes(RestApiCreateEvent $event): void
