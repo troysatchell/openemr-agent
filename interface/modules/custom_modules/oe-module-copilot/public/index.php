@@ -131,6 +131,18 @@ $csrfToken = CsrfUtils::collectCsrfToken($session);
     <div class="hint"><?php echo xlt('Every turn re-reads the live chart. Prior turns inform phrasing only — never facts.'); ?></div>
   </fieldset>
 
+  <fieldset>
+    <legend><?php echo xlt('Upload a document'); ?></legend>
+    <select id="doc-type">
+      <option value="lab_pdf"><?php echo xlt('Lab PDF'); ?></option>
+      <option value="intake_form"><?php echo xlt('Intake form'); ?></option>
+    </select>
+    <input type="file" id="doc-file" accept=".pdf,.png,.jpg,.jpeg">
+    <button id="upload-btn" disabled><?php echo xlt('Upload'); ?></button>
+    <div class="hint"><?php echo xlt('Attaches the file to the selected patient and runs extraction, provenance-linked back to the source document. Failures report honestly and stay retryable.'); ?></div>
+    <div id="upload-result"></div>
+  </fieldset>
+
   <div id="out"></div>
 </div>
 
@@ -624,15 +636,75 @@ $("patient-select").addEventListener("change", (e) => {
   if (!opt || !opt.value) {
     currentPatient = null;
     $("ask").disabled = true;
+    $("upload-btn").disabled = true;
     $("snapshot").replaceChildren();
     renderSuggestions(null);
     return;
   }
   currentPatient = { uuid: opt.value, name: opt.dataset.name || "" };
   $("ask").disabled = false;
+  $("upload-btn").disabled = false;
+  $("upload-result").replaceChildren();
   loadSnapshot();
 });
 
+// Reads the chosen file into the base64 content-mode wire the upload
+// endpoint decodes (browser-reachable; the data: prefix is stripped).
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result);
+      resolve(s.slice(s.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(new Error("Could not read the file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadDoc() {
+  const box = $("upload-result");
+  const btn = $("upload-btn");
+  const file = $("doc-file").files[0];
+  if (!currentPatient) {
+    box.replaceChildren(el("div", "banner error", "Select a patient above first."));
+    return;
+  }
+  if (!file) {
+    box.replaceChildren(el("div", "banner error", "Choose a file to upload."));
+    return;
+  }
+  btn.disabled = true;
+  box.replaceChildren(el("div", "hint", "Uploading and extracting…"));
+  try {
+    const b64 = await fileToBase64(file);
+    const data = await post("upload", {
+      patient_uuid: currentPatient.uuid,
+      doc_type: $("doc-type").value,
+      filename: file.name,
+      file_content_b64: b64,
+    });
+    const failed = data.extraction_status !== "extracted";
+    // extraction_failed is a failure state — never styled as success. The
+    // document is attached and retryable either way.
+    box.replaceChildren(el(
+      "div",
+      failed ? "banner error" : "banner quiet",
+      "Document #" + data.document_id + " — extraction_status: " + data.extraction_status
+        + (failed ? " (attached; extraction failed honestly — retry after checking the file)" : "")
+    ));
+    if (!failed) {
+      // New provenance-linked facts may now be on the chart — re-read it.
+      loadSnapshot();
+    }
+  } catch (e) {
+    box.replaceChildren(el("div", "banner error", e.message || "Upload failed."));
+  } finally {
+    btn.disabled = !currentPatient;
+  }
+}
+
+$("upload-btn").addEventListener("click", uploadDoc);
 $("refresh").addEventListener("click", loadSchedule);
 $("ask").addEventListener("click", ask);
 // Submit on Enter; Shift+Enter inserts a newline for multi-line questions.
