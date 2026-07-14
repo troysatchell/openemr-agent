@@ -59,6 +59,7 @@ use OpenEMR\Modules\Copilot\Rag\CohereEmbedClient;
 use OpenEMR\Modules\Copilot\Rag\CohereHttpTransport;
 use OpenEMR\Modules\Copilot\Rag\CohereRerankClient;
 use OpenEMR\Modules\Copilot\Rag\CorpusIndexSchema;
+use OpenEMR\Modules\Copilot\Rag\DisclosedEvidenceRetrieverWorker;
 use OpenEMR\Modules\Copilot\Rag\EvidenceRetrievalService;
 use OpenEMR\Modules\Copilot\Rag\EvidenceRetrieverWorkerImpl;
 use OpenEMR\Modules\Copilot\Rag\HybridRetriever;
@@ -558,8 +559,22 @@ class Bootstrap
 
             $embedder = new CohereEmbedClient(CohereHttpTransport::forEmbed(), $embedModel);
             $reranker = new CohereRerankClient(CohereHttpTransport::forRerank(), $rerankModel);
-            $evidenceWorker = new EvidenceRetrieverWorkerImpl(
-                new EvidenceRetrievalService($embedder, new HybridRetriever($reranker)),
+            // The question text crossing to the embed/rerank vendor is a
+            // disclosed crossing like every other vendor crossing (C1/C5) —
+            // logged before the call, per DisclosedEvidenceRetrieverWorker.
+            $evidenceWorker = new DisclosedEvidenceRetrieverWorker(
+                new EvidenceRetrieverWorkerImpl(
+                    new EvidenceRetrievalService($embedder, new HybridRetriever($reranker)),
+                ),
+                EventAuditDisclosureLogger::forEventAuditLogger(),
+                $physician,
+                $patientPid,
+                new class implements ClockInterface {
+                    public function now(): \DateTimeImmutable
+                    {
+                        return new \DateTimeImmutable();
+                    }
+                },
             );
 
             $dispatcher = new SupervisedTurnDispatcher(

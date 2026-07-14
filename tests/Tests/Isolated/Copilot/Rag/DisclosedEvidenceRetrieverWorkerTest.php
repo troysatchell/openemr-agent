@@ -119,7 +119,9 @@ class DisclosedEvidenceRetrieverWorkerTest extends TestCase
         $result = $worker->run('Is Alma Reyes due for a statin per our protocol?', 5, $span);
 
         $this->assertSame(['disclosure-logged', 'vendor-called'], $spy->sequence, 'log THEN send (C1)');
-        $this->assertSame($this->outcome()->chunks[0]->chunkId, $result->chunks[0]->chunkId, 'the outcome passes through untouched');
+        $chunk = $result->chunks[0] ?? null;
+        $this->assertInstanceOf(RetrievedChunk::class, $chunk);
+        $this->assertSame('htn.bp-target', $chunk->chunkId, 'the outcome passes through untouched');
         $this->assertSame('Is Alma Reyes due for a statin per our protocol?', $inner->questionSeen, 'the question passes through untouched');
 
         $disclosure = $spy->last;
