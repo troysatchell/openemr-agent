@@ -1,0 +1,53 @@
+{
+    "id": "missing-data-intake-empty-sections-honest",
+    "kind": "extraction",
+    "category": "missing_data",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs",
+        "schema_valid"
+    ],
+    "_guards_against": "Empty intake sections fabricated as facts — an empty allergies list is 'not captured', never a persisted 'no known allergies' assertion the chart later trusts.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels.",
+    "inputs": {
+        "doc_type": "intake_form",
+        "filename": "sparse-intake.pdf",
+        "document_bytes": "%PDF-1.7 goldenset missing-data-intake-empty-sections-honest synthetic fixture bytes\n",
+        "vlm_wire": {
+            "documentId": "999999",
+            "chiefConcern": {
+                "isPresent": true,
+                "value": "Annual physical",
+                "confidence": 0.95,
+                "citation": {
+                    "source_type": "intake_form",
+                    "source_id": "999999",
+                    "page_or_section": "1",
+                    "field_or_chunk_id": "chiefConcern",
+                    "quote_or_value": "Annual physical"
+                }
+            },
+            "currentMedications": [],
+            "allergies": [],
+            "familyHistory": [],
+            "demographics": []
+        }
+    },
+    "expected": {
+        "extraction_status": "extracted",
+        "document_attached": true,
+        "intake_candidates": [
+            {
+                "field_path": "chiefConcern",
+                "value": "Annual physical",
+                "confidence": 0.95
+            }
+        ],
+        "absent_field_paths": [
+            "allergies[0]",
+            "currentMedications[0]",
+            "familyHistory[0]"
+        ]
+    }
+}

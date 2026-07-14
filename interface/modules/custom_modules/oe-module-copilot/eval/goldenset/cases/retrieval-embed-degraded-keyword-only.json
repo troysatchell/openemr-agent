@@ -1,0 +1,30 @@
+{
+    "id": "retrieval-embed-degraded-keyword-only",
+    "kind": "retrieval",
+    "category": "retrieval",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "The embedder outage taking keyword retrieval down with it — the asymmetric pair collapsing into all-or-nothing (PS-12, embed arm: keyword-only, flagged).",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Behavior contract: RetrievalOutcome.denseDegraded (PS-12).",
+    "inputs": {
+        "question": "blood pressure target hypertension follow-up",
+        "top_k": 5,
+        "degrade": [
+            "embed"
+        ],
+        "fixture_aim_chunk_ids": [
+            "htn.bp-target"
+        ]
+    },
+    "expected": {
+        "chunk_ids_in_top_k": [
+            "htn.bp-target"
+        ],
+        "top_chunk_id": null,
+        "dense_degraded": true,
+        "rerank_degraded": false
+    }
+}

@@ -1,0 +1,79 @@
+{
+    "id": "composition-mixed-source-detector-guideline",
+    "kind": "turn",
+    "category": "composition",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "The verifier or renderer mishandling the first answer whose halves come from different source classes — detector (why flagged) and guideline (what we do) must both ground through the same one-mint index (TRO-34).",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. PS-14; detector threshold provenance ARUP; protocol chunk critical.potassium.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": true,
+            "physician_engaged_critical_finding": true
+        },
+        "question": "Why is this potassium flagged, and what is our response protocol?",
+        "top_k": 5,
+        "chart": {
+            "labs": [
+                {
+                    "analyte": "Potassium",
+                    "value": 6.8,
+                    "unit": "mmol/L",
+                    "ref_id": "lab-potassium",
+                    "quote": "6.8 mmol/L"
+                }
+            ],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": [
+            {
+                "text": "Potassium 6.8 mmol/L exceeds the practice panic threshold.",
+                "cites": [
+                    {
+                        "source_type": "detector",
+                        "source_id": "panic-potassium-high"
+                    }
+                ]
+            },
+            {
+                "text": "The practice protocol directs an immediate critical-value response for this result.",
+                "cites": [
+                    {
+                        "source_type": "guideline",
+                        "source_id": "protocol-critical-values-v1",
+                        "field_or_chunk_id": "critical.potassium"
+                    }
+                ]
+            }
+        ]
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "EvidenceRetriever",
+            "ComposeAnswer"
+        ],
+        "mapped_chunk_id": "critical.potassium",
+        "grounded_claim_indexes": [
+            0,
+            1
+        ],
+        "rejected_claim_indexes": [],
+        "grounded_citation_source_types_include": [
+            "detector",
+            "guideline"
+        ],
+        "vendor_calls": {
+            "embed": 0,
+            "rerank": 0
+        }
+    }
+}

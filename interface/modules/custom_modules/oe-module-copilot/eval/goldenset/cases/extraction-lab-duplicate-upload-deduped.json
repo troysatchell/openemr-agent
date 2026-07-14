@@ -1,0 +1,88 @@
+{
+    "id": "extraction-lab-duplicate-upload-deduped",
+    "kind": "extraction",
+    "category": "extraction",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs",
+        "schema_valid"
+    ],
+    "_guards_against": "Duplicate records from a double upload — the same bytes attached twice must resolve to one document and one derived chain (PS-5 one-directional dedup; the write amendment's 'no duplicate or untraceable records' acceptance).",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. W2_ARCHITECTURE.md §2 dedupe-by-hash.",
+    "inputs": {
+        "doc_type": "lab_pdf",
+        "filename": "dup-panel.pdf",
+        "document_bytes": "%PDF-1.7 goldenset extraction-lab-duplicate-upload-deduped synthetic fixture bytes\n",
+        "vlm_wire": {
+            "documentId": "999999",
+            "analytes": [
+                {
+                    "testName": {
+                        "isPresent": true,
+                        "value": "Hemoglobin",
+                        "confidence": 0.97,
+                        "citation": {
+                            "source_type": "lab_pdf",
+                            "source_id": "999999",
+                            "page_or_section": "1",
+                            "field_or_chunk_id": "analytes[0].testName",
+                            "quote_or_value": "Hemoglobin"
+                        }
+                    },
+                    "value": {
+                        "isPresent": true,
+                        "value": "13.9",
+                        "confidence": 0.96,
+                        "citation": {
+                            "source_type": "lab_pdf",
+                            "source_id": "999999",
+                            "page_or_section": "1",
+                            "field_or_chunk_id": "analytes[0].value",
+                            "quote_or_value": "13.9"
+                        }
+                    },
+                    "unit": {
+                        "isPresent": true,
+                        "value": "g/dL",
+                        "confidence": 0.95,
+                        "citation": {
+                            "source_type": "lab_pdf",
+                            "source_id": "999999",
+                            "page_or_section": "1",
+                            "field_or_chunk_id": "analytes[0].unit",
+                            "quote_or_value": "g/dL"
+                        }
+                    },
+                    "referenceRange": {
+                        "isPresent": false,
+                        "value": null,
+                        "confidence": null,
+                        "citation": null
+                    },
+                    "abnormalFlag": {
+                        "isPresent": false,
+                        "value": null,
+                        "confidence": null,
+                        "citation": null
+                    },
+                    "collectionDate": "2026-07-01"
+                }
+            ]
+        },
+        "upload_twice": true
+    },
+    "expected": {
+        "extraction_status": "extracted",
+        "document_attached": true,
+        "second_attach_deduplicates": true,
+        "lab_rows": [
+            {
+                "test_name": "Hemoglobin",
+                "value": "13.9",
+                "unit": "g/dL",
+                "collection_date": "2026-07-01"
+            }
+        ]
+    }
+}
