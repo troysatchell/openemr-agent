@@ -52,6 +52,7 @@ use OpenEMR\Modules\Copilot\Orchestration\TurnOrchestrator;
 use OpenEMR\Modules\Copilot\Routes\AclRequirement;
 use OpenEMR\Modules\Copilot\Routes\DocumentUploadEndpoint;
 use OpenEMR\Modules\Copilot\Routes\GuardedRouteRegistrar;
+use OpenEMR\Modules\Copilot\Routes\SourceResolverEndpoint;
 use OpenEMR\Modules\Copilot\Routes\TurnEndpoint;
 use OpenEMR\Modules\Copilot\Synthesis\ChartSnapshotSynthesizer;
 use OpenEMR\Modules\Copilot\Verification\ClaimVerifier;
@@ -104,6 +105,7 @@ class Bootstrap
         $event->addScope('user', 'ready', 'read');
         $event->addScope('user', 'turn', 'write');
         $event->addScope('user', 'document', 'write');
+        $event->addScope('user', 'source', 'read');
     }
 
     public function registerApiRoutes(RestApiCreateEvent $event): void
@@ -278,6 +280,61 @@ class Bootstrap
                     http_response_code(500);
 
                     return ['error' => 'Document ingestion failed.'];
+                }
+            }
+        );
+
+        $registrar->register(
+            'POST /api/copilot/source',
+            // Same ACL as the turn/document routes: resolving a citation can
+            // surface patient-scoped document content (the document/
+            // derived_observation branches), so it rides the identical
+            // section/value pairing rather than a narrower one that would
+            // have to vary by token type.
+            new AclRequirement('patients', 'med'),
+            static function (HttpRestRequest $request): array {
+                // Delegation, never a service account (S4/S6): same
+                // principal extraction as the turn/document routes.
+                $user = $request->getRequestUser();
+                $username = is_string($user['username'] ?? null) ? $user['username'] : '';
+                $userId = $request->getRequestUserId();
+                if (trim($username) === '' || $userId === null) {
+                    http_response_code(403);
+
+                    return ['error' => 'No authenticated user principal for this request.'];
+                }
+
+                try {
+                    $decoded = json_decode($request->getContent(), true, 16, JSON_THROW_ON_ERROR);
+                } catch (\JsonException) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be valid JSON.'];
+                }
+                if (!is_array($decoded)) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be a JSON object.'];
+                }
+
+                try {
+                    $endpoint = SourceResolverEndpoint::forLiveResolution();
+
+                    // Normalise decoded JSON to string keys — see the turn
+                    // route above for why.
+                    $input = [];
+                    foreach ($decoded as $key => $value) {
+                        $input[(string) $key] = $value;
+                    }
+
+                    return $endpoint->handle(new PhysicianContext($username, $userId), $input);
+                } catch (\DomainException) {
+                    // Generic by design — never echo internals (R11); this
+                    // also covers the malformed/unresolvable/cross-patient
+                    // token cases SourceResolverEndpoint itself refuses.
+                    http_response_code(400);
+
+                    return ['error' => 'Invalid request: token and patient_uuid are required and must resolve.'];
                 }
             }
         );

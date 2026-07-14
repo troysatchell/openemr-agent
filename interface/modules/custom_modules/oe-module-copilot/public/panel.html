@@ -5,20 +5,55 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clinical Co-Pilot — panel</title>
 <!--
-  Clinical Co-Pilot chat panel (T20; UC1/UC2; R5/R6/R10/R11).
+  Clinical Co-Pilot chat panel (T20; TRO-43/TRO-44; UC1/UC2/UC6; R5/R6/R10/R11;
+  W2_ARCHITECTURE.md §4/§8; MVP row 5 "source-grounded UI").
 
-  Self-contained, zero external assets. Talks ONLY to the module's guarded
-  REST route (POST {base}/api/copilot/turn) with a Bearer token — patient
-  data never takes any other path. Preserve-distrust UX:
+  Self-contained, zero external assets. Talks ONLY to this module's guarded
+  REST routes with a Bearer token — patient data never takes any other path:
+    - POST {base}/api/copilot/turn      (ask a question; T20)
+    - POST {base}/api/copilot/document  (attach + extract a source document;
+      the two-write amendment's write (a)+(b), TRO-16/17/18/32)
+    - POST {base}/api/copilot/source    (resolve a citation token to a
+      minimum-necessary preview, re-grounded against LIVE data every click;
+      TRO-44)
+
+  Preserve-distrust UX:
     - must-not-miss findings are visually loud and carry their citations;
     - the unevaluable section renders honest uncertainty as content;
     - grounded claims show the citations that SURVIVED verification;
     - rejected claims are explicitly unverified — never styled as fact;
     - a degraded turn shows findings plus an honest banner;
     - a quiet turn says so explicitly (earned silence, R5) — never a blank.
+
+  Three registers, rendered visually separate (corpus README §2; never
+  interleaved as one undifferentiated citation soup): patient-record facts
+  (chart entries AND document-extraction facts alike — `ref-chart`), detector
+  flags (`ref-detector`), and guideline evidence (`ref-guideline`; grounded
+  answers additionally list their guideline citations again under their own
+  "Guideline evidence" heading inside the answer zone). Every citation chip
+  carries its exact resolution token (`dataset.token`) and is click-to-source:
+  clicking it re-resolves the token against `/api/copilot/source` live and
+  renders the result into #source-preview — the click always has a visible
+  destination, honest on failure.
+
+  KNOWN GAP (recorded here, not silently worked around — see
+  docs/W2_LATENCY_COST.md and the TRO-43/44 handoff notes): the guarded
+  `/api/copilot/document` route's wire contract (`DocumentUploadEndpoint`)
+  expects `file_path` to be a path the SERVER's filesystem can already read
+  (`is_file()`/`is_readable()`), not raw uploaded bytes — there is no
+  multipart/base64 acceptance path or upload-materialization step in front of
+  it yet. A browser's `<input type=file>` cannot supply a server-side path
+  (browsers deliberately withhold the real local path), so this panel sends
+  the closest honest substitute (`file.name`, `file.size`) in the exact wire
+  shape the route parses, and a real deployment will refuse it today with the
+  route's own generic "Invalid request" error — rendered honestly below,
+  never silently swallowed or faked as success. Closing this gap requires
+  either extending the route to accept raw bytes or adding a separate
+  server-side materialization endpoint; both are route-contract changes this
+  slice deliberately does not make (do not weaken the guarded route).
 -->
 <style>
-  :root { --ink:#1a1f24; --mut:#5a6572; --line:#d9dee4; --crit:#b3261e; --warn:#9a6a00; --ok:#1b6e3c; --rej:#6b7280; --bg:#f7f8fa; }
+  :root { --ink:#1a1f24; --mut:#5a6572; --line:#d9dee4; --crit:#b3261e; --warn:#9a6a00; --ok:#1b6e3c; --rej:#6b7280; --bg:#f7f8fa; --guide:#1c4e80; --guide-bg:#eef6ff; --guide-line:#b9d7f5; --det-bg:#fdf0f0; --det-line:#e3b8b5; }
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color:var(--ink); background:var(--bg); }
   .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 60px; }
@@ -27,7 +62,7 @@
   fieldset { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px 14px; margin:0 0 14px; }
   legend { font-size:12px; color:var(--mut); padding:0 6px; text-transform:uppercase; letter-spacing:.04em; }
   label { display:block; font-size:12px; color:var(--mut); margin:8px 0 2px; }
-  input[type=text], input[type=password], textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font:inherit; }
+  input[type=text], input[type=password], input[type=file], select, textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font:inherit; }
   textarea { resize: vertical; min-height: 64px; }
   button { margin-top:10px; padding:9px 18px; border:0; border-radius:6px; background:#20476b; color:#fff; font:inherit; font-weight:600; cursor:pointer; }
   button:disabled { opacity:.5; cursor:wait; }
@@ -37,6 +72,7 @@
   .banner.quiet { background:#eef4ef; border:1px solid #bcd4c2; color:var(--ok); }
   section.zone { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:14px 0; }
   section.zone h2 { font-size:13px; margin:0 0 8px; text-transform:uppercase; letter-spacing:.05em; }
+  section.zone h3 { font-size:12px; margin:12px 0 6px; text-transform:uppercase; letter-spacing:.05em; color:var(--guide); }
   .crit-item { border-left:5px solid var(--crit); background:#fdf5f5; padding:8px 12px; margin:8px 0; border-radius:0 6px 6px 0; }
   .crit-item .type { display:inline-block; font-size:11px; font-weight:700; color:#fff; background:var(--crit); border-radius:4px; padding:1px 7px; margin-right:8px; text-transform:uppercase; letter-spacing:.03em; }
   .crit-item .summary { font-weight:600; }
@@ -46,6 +82,10 @@
   .claim.rejected .flag { display:block; font-size:11px; font-weight:700; color:var(--rej); text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
   .refs { margin-top:5px; }
   .ref { display:inline-block; font:11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background:#eef1f5; border:1px solid var(--line); border-radius:4px; padding:0 6px; margin:0 4px 3px 0; color:#33475c; }
+  .ref.ref-guideline { background:var(--guide-bg); border-color:var(--guide-line); color:var(--guide); }
+  .ref.ref-detector { background:var(--det-bg); border-color:var(--det-line); color:var(--crit); }
+  .ref.ref-chart { background:#eef1f5; border-color:var(--line); color:#33475c; }
+  .ref:focus-visible { outline:2px solid #20476b; outline-offset:1px; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
 </style>
 </head>
@@ -65,6 +105,20 @@
   </fieldset>
 
   <fieldset>
+    <legend>Upload a document</legend>
+    <label for="doc-type">Document type</label>
+    <select id="doc-type">
+      <option value="lab_pdf">Lab PDF</option>
+      <option value="intake_form">Intake form</option>
+    </select>
+    <label for="doc-file">File</label>
+    <input type="file" id="doc-file" accept=".pdf,.png,.jpg,.jpeg">
+    <button id="upload" type="button">Upload</button>
+    <div class="hint">Attaches the file to this patient and runs extraction, provenance-linked back to the source document (the two-write amendment) — the result below reports extraction_status, whether extracted or honestly failed, never fire-and-forget.</div>
+    <div id="upload-status"></div>
+  </fieldset>
+
+  <fieldset>
     <legend>Ask about this patient</legend>
     <textarea id="question" placeholder="e.g. Anything new on the potassium trend? Is the anticoagulation current?"></textarea>
     <button id="ask">Ask</button>
@@ -72,6 +126,12 @@
   </fieldset>
 
   <div id="out"></div>
+
+  <fieldset>
+    <legend>Source preview</legend>
+    <div class="hint">Click any citation chip above to verify its source here — every click re-resolves against live data, never a cached turn.</div>
+    <div id="source-preview"></div>
+  </fieldset>
 </div>
 
 <script>
@@ -86,18 +146,139 @@ function el(tag, cls, text) {
   return node;
 }
 
+async function apiPost(path, payload) {
+  const resp = await fetch($("base").value.replace(/\/$/, "") + path, {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + $("token").value.trim(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  let parsed = null;
+  try {
+    parsed = await resp.json();
+  } catch (e) {
+    parsed = null;
+  }
+  if (!resp.ok) {
+    const message = (parsed && parsed.error) ? parsed.error : ("Request failed (HTTP " + resp.status + ").");
+    throw new Error(message);
+  }
+  return parsed;
+}
+
+// The three registers (corpus README §2 / W2_ARCHITECTURE §4), determined
+// from the token's own sourceType prefix — the same grammar
+// SourceResolverEndpoint parses — so classification can never drift from
+// resolution: guideline evidence, detector flags, and everything else
+// (patient-record facts, chart-native or document-extracted alike).
+function registerClassFor(token) {
+  if (token.indexOf("guideline:") === 0) return "ref-guideline";
+  if (token.indexOf("detector:") === 0) return "ref-detector";
+  return "ref-chart";
+}
+
+// A citation is {token, kind, label}. The chip reads "Kind · Label" (or the
+// raw token if an older shape slips through), carries its exact resolution
+// token both as a title (hover) and as dataset.token (click-to-source
+// provenance fidelity), and is click-to-source: clicking it re-resolves the
+// token live via /api/copilot/source and renders the result into
+// #source-preview.
 function refChips(refs) {
   const box = el("div", "refs");
-  // A citation is {token, kind, label}; show "Kind · Label" (or the raw token
-  // if an older shape slips through), exact token on hover.
   (refs || []).forEach((r) => {
     const cite = (r && typeof r === "object") ? r : { token: String(r), kind: null, label: null };
     const text = cite.label ? (cite.kind + " · " + cite.label) : (cite.kind || cite.token);
-    const chip = el("span", "ref", text);
-    if (cite.token) chip.title = cite.token;
+    const registerClass = cite.token ? registerClassFor(cite.token) : "ref-chart";
+    const chip = el("span", "ref " + registerClass, text);
+    if (cite.token) {
+      chip.title = cite.token;
+      chip.dataset.token = cite.token;
+      chip.tabIndex = 0;
+      chip.setAttribute("role", "button");
+      chip.style.cursor = "pointer";
+      const resolve = () => showSourcePreview(cite.token);
+      chip.addEventListener("click", resolve);
+      chip.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          resolve();
+        }
+      });
+    }
     box.appendChild(chip);
   });
   return box;
+}
+
+// Renders one resolved source preview by type — minimum-necessary fields
+// only, matching exactly what SourceResolverEndpoint returns for that type.
+function renderSourcePreview(preview) {
+  const box = $("source-preview");
+  box.replaceChildren();
+  if (!preview || !preview.type) {
+    box.appendChild(el("div", "banner error", "Unrecognized source preview."));
+    return;
+  }
+  if (preview.type === "document") {
+    const item = el("div", "claim");
+    item.appendChild(el("div", null, preview.filename + " — page " + (preview.page || "(no page recorded)")));
+    item.appendChild(el("div", "hint", "\"" + preview.quote + "\" — field " + preview.field));
+    box.appendChild(item);
+    return;
+  }
+  if (preview.type === "guideline") {
+    const item = el("div", "claim");
+    item.appendChild(el("div", null, preview.heading + " (" + preview.source_id + ")"));
+    item.appendChild(el("div", "hint", preview.snippet));
+    box.appendChild(item);
+    return;
+  }
+  if (preview.type === "detector") {
+    box.appendChild(el("div", "claim", preview.label + " (" + preview.finding_id + ")"));
+    return;
+  }
+  if (preview.type === "chart") {
+    box.appendChild(el("div", "claim", preview.source_type + ": " + preview.source_id));
+    return;
+  }
+  box.appendChild(el("div", "banner error", "Unrecognized source preview."));
+}
+
+async function showSourcePreview(token) {
+  const box = $("source-preview");
+  const uuid = $("uuid").value.trim();
+  if (!uuid) {
+    box.replaceChildren(el("div", "banner error", "A patient UUID is required to resolve a source."));
+    return;
+  }
+  box.replaceChildren(el("div", "hint", "Resolving source…"));
+  try {
+    const preview = await apiPost("/api/copilot/source", { token: token, patient_uuid: uuid });
+    renderSourcePreview(preview);
+  } catch (e) {
+    box.replaceChildren(el("div", "banner error", e.message || "Request failed."));
+  }
+}
+
+// Every guideline ref cited by a grounded claim, deduped by token — listed
+// again under the answer zone's own "Guideline evidence" heading so
+// guideline evidence is never interleaved with patient-record facts even
+// inside one claim's citation list (corpus README §2).
+function collectGuidelineRefs(groundedClaims) {
+  const seen = new Set();
+  const refs = [];
+  (groundedClaims || []).forEach((c) => {
+    (c.refs || []).forEach((r) => {
+      const token = r && r.token;
+      if (token && registerClassFor(token) === "ref-guideline" && !seen.has(token)) {
+        seen.add(token);
+        refs.push(r);
+      }
+    });
+  });
+  return refs;
 }
 
 function render(turn) {
@@ -151,6 +332,13 @@ function render(turn) {
       item.appendChild(el("div", null, c.text));
       zone.appendChild(item);
     });
+
+    const guidelineRefs = collectGuidelineRefs(grounded);
+    if (guidelineRefs.length) {
+      zone.appendChild(el("h3", null, "Guideline evidence"));
+      zone.appendChild(refChips(guidelineRefs));
+    }
+
     out.appendChild(zone);
   } else if (!turn.degraded) {
     // The model produced no groundable answer to the question — make that
@@ -180,31 +368,59 @@ async function ask() {
   }
   btn.disabled = true;
   try {
-    const resp = await fetch($("base").value.replace(/\/$/, "") + "/api/copilot/turn", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer " + $("token").value.trim(),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ patient_uuid: uuid, question: question, prior_turns: priorTurns.slice(-6) }),
-    });
-    if (!resp.ok) {
-      out.replaceChildren(el("div", "banner error",
-        "Request failed (HTTP " + resp.status + "). Check the token, base URL, and patient UUID."));
-      return;
-    }
-    const turn = await resp.json();
+    const turn = await apiPost("/api/copilot/turn", { patient_uuid: uuid, question: question, prior_turns: priorTurns.slice(-6) });
     render(turn);
     const groundedText = turn.answer && turn.answer.grounded ? turn.answer.grounded.map((c) => c.text).join(" ") : "(no grounded answer)";
     priorTurns.push("Q: " + question + " A: " + groundedText);
   } catch (e) {
-    out.replaceChildren(el("div", "banner error", "Network error — the request did not complete."));
+    out.replaceChildren(el("div", "banner error", e.message || "Network error — the request did not complete."));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Uploads the selected file's metadata against the guarded document route
+// (TRO-16), in the exact wire shape DocumentUploadEndpoint parses
+// (patient_uuid, doc_type, file_path, file_size_bytes). KNOWN GAP (see the
+// top-of-file docblock): the route requires file_path to already be readable
+// on the SERVER's filesystem, which a static browser page cannot supply —
+// file.name is the closest honest substitute. Against a real server this
+// call fails (never silently), and the failure renders in the same honest
+// banner style as every other request here; extraction_status is always
+// surfaced on success so the result is never fire-and-forget.
+async function upload() {
+  const btn = $("upload");
+  const status = $("upload-status");
+  const uuid = $("uuid").value.trim();
+  const docType = $("doc-type").value;
+  const file = $("doc-file").files && $("doc-file").files[0];
+  status.replaceChildren();
+  if (!uuid || !file) {
+    status.replaceChildren(el("div", "banner error", "A patient UUID and a chosen file are both required."));
+    return;
+  }
+  btn.disabled = true;
+  status.replaceChildren(el("div", "hint", "Uploading…"));
+  try {
+    const result = await apiPost("/api/copilot/document", {
+      patient_uuid: uuid,
+      doc_type: docType,
+      file_path: file.name,
+      file_size_bytes: file.size,
+    });
+    const extractionStatus = result && result.extraction_status ? result.extraction_status : "unknown";
+    const documentId = result && result.document_id ? result.document_id : "?";
+    status.replaceChildren(el("div", "banner quiet",
+      "Document #" + documentId + " — extraction_status: " + extractionStatus));
+  } catch (e) {
+    status.replaceChildren(el("div", "banner error", e.message || "Network error — the request did not complete."));
   } finally {
     btn.disabled = false;
   }
 }
 
 $("ask").addEventListener("click", ask);
+$("upload").addEventListener("click", upload);
 // Submit on Enter; Shift+Enter inserts a newline for multi-line questions.
 $("question").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
