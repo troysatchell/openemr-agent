@@ -77,7 +77,11 @@ class HybridRetrieverTest extends TestCase
     private function retriever(array $scoresByPosition = []): HybridRetriever
     {
         $transport = static function (array $requestBody) use ($scoresByPosition): array {
-            self::$rerankRequests[] = $requestBody;
+            $stringKeyed = [];
+            foreach ($requestBody as $key => $value) {
+                $stringKeyed[(string) $key] = $value;
+            }
+            self::$rerankRequests[] = $stringKeyed;
             $documents = $requestBody['documents'] ?? [];
             $results = [];
             if (is_array($documents)) {

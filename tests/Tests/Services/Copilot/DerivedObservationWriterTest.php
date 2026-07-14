@@ -173,6 +173,7 @@ class DerivedObservationWriterTest extends TestCase
         $this->assertSame(DerivedObservationWriter::EXTRACTOR_VERSION, $lineage['extractor_version']);
         $this->assertSame('analytes[].value', $lineage['field_path']);
         $this->assertSame('2', $lineage['page']);
+        $this->assertIsNumeric($lineage['confidence']);
         $this->assertEqualsWithDelta(0.9, (float) $lineage['confidence'], 0.0001);
     }
 
