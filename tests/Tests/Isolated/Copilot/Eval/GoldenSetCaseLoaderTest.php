@@ -88,10 +88,9 @@ class GoldenSetCaseLoaderTest extends TestCase
         $cases = (new GoldenSetCaseLoader())->loadFromDirectory(self::COMMITTED_CASES_DIR);
 
         $this->assertCount(50, $cases);
-        foreach ($cases as $case) {
-            $this->assertInstanceOf(GoldenSetCase::class, $case);
-        }
 
+        // Element type list<GoldenSetCase> is the loader's declared return —
+        // enforced by PHPStan at the call sites below, not re-asserted here.
         $ids = array_map(static fn (GoldenSetCase $case): string => $case->id, $cases);
         $sorted = $ids;
         sort($sorted);

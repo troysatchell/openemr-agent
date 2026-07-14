@@ -191,11 +191,14 @@ class GoldenSetDataContractTest extends TestCase
             $rubrics = $case['rubrics'];
             $this->assertIsArray($rubrics, $id);
             $this->assertNotSame([], $rubrics, $id);
-            $this->assertSame(array_values(array_unique($rubrics)), $rubrics, "case {$id} rubrics must be unique");
+            $rubricNames = [];
             foreach ($rubrics as $rubric) {
+                $this->assertIsString($rubric, $id);
                 $this->assertContains($rubric, self::RUBRICS, $id);
+                $rubricNames[] = $rubric;
             }
-            $this->assertContains('no_phi_in_logs', $rubrics, "case {$id}: every case is PHI-scanned");
+            $this->assertSame(array_values(array_unique($rubricNames)), $rubricNames, "case {$id} rubrics must be unique");
+            $this->assertContains('no_phi_in_logs', $rubricNames, "case {$id}: every case is PHI-scanned");
 
             $this->assertIsArray($case['inputs'], $id);
             $this->assertNotSame([], $case['inputs'], $id);
