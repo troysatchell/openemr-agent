@@ -36,21 +36,20 @@
   renders the result into #source-preview — the click always has a visible
   destination, honest on failure.
 
-  KNOWN GAP (recorded here, not silently worked around — see
-  docs/W2_LATENCY_COST.md and the TRO-43/44 handoff notes): the guarded
-  `/api/copilot/document` route's wire contract (`DocumentUploadEndpoint`)
-  expects `file_path` to be a path the SERVER's filesystem can already read
-  (`is_file()`/`is_readable()`), not raw uploaded bytes — there is no
-  multipart/base64 acceptance path or upload-materialization step in front of
-  it yet. A browser's `<input type=file>` cannot supply a server-side path
-  (browsers deliberately withhold the real local path), so this panel sends
-  the closest honest substitute (`file.name`, `file.size`) in the exact wire
-  shape the route parses, and a real deployment will refuse it today with the
-  route's own generic "Invalid request" error — rendered honestly below,
-  never silently swallowed or faked as success. Closing this gap requires
-  either extending the route to accept raw bytes or adding a separate
-  server-side materialization endpoint; both are route-contract changes this
-  slice deliberately does not make (do not weaken the guarded route).
+  "Include guideline evidence" (`id="ask-evidence"`) is an explicit clinician
+  toggle carried on the turn wire as `ask_evidence` — UC7's evidence request
+  is a stated intent, never an invented NLP classification of the question
+  text. When checked, the live route composes the supervised evidence-
+  retriever for this turn only (Wave K.2, TRO-44); left unchecked, the turn
+  behaves exactly as it did in Week 1.
+
+  GAP CLOSED (Wave K.2, TRO-43, 2026-07-14 — see docs/W2_LATENCY_COST.md):
+  the guarded `/api/copilot/document` route now accepts a browser-reachable
+  content mode (`filename` + `file_content_b64`, a strict base64 encoding of
+  the raw file bytes) alongside the original server-path mode (`file_path` +
+  `file_size_bytes`); this panel reads the chosen file via `FileReader` and
+  sends that content mode, so a real deployment ingests it rather than
+  refusing it.
 -->
 <style>
   :root { --ink:#1a1f24; --mut:#5a6572; --line:#d9dee4; --crit:#b3261e; --warn:#9a6a00; --ok:#1b6e3c; --rej:#6b7280; --bg:#f7f8fa; --guide:#1c4e80; --guide-bg:#eef6ff; --guide-line:#b9d7f5; --det-bg:#fdf0f0; --det-line:#e3b8b5; }
@@ -62,6 +61,8 @@
   fieldset { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px 14px; margin:0 0 14px; }
   legend { font-size:12px; color:var(--mut); padding:0 6px; text-transform:uppercase; letter-spacing:.04em; }
   label { display:block; font-size:12px; color:var(--mut); margin:8px 0 2px; }
+  label.evidence-toggle { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink); margin:10px 0 0; }
+  label.evidence-toggle input[type=checkbox] { width:auto; }
   input[type=text], input[type=password], input[type=file], select, textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font:inherit; }
   textarea { resize: vertical; min-height: 64px; }
   button { margin-top:10px; padding:9px 18px; border:0; border-radius:6px; background:#20476b; color:#fff; font:inherit; font-weight:600; cursor:pointer; }
@@ -121,8 +122,9 @@
   <fieldset>
     <legend>Ask about this patient</legend>
     <textarea id="question" placeholder="e.g. Anything new on the potassium trend? Is the anticoagulation current?"></textarea>
+    <label for="ask-evidence" class="evidence-toggle"><input type="checkbox" id="ask-evidence"> Include guideline evidence</label>
     <button id="ask">Ask</button>
-    <div class="hint">Every turn re-reads the live chart. Prior turns inform phrasing only — never facts.</div>
+    <div class="hint">Every turn re-reads the live chart. Prior turns inform phrasing only — never facts. "Include guideline evidence" is an explicit ask (UC7) — never inferred from the question text — that runs the supervised evidence-retriever for this turn only.</div>
   </fieldset>
 
   <div id="out"></div>
@@ -368,7 +370,14 @@ async function ask() {
   }
   btn.disabled = true;
   try {
-    const turn = await apiPost("/api/copilot/turn", { patient_uuid: uuid, question: question, prior_turns: priorTurns.slice(-6) });
+    const turn = await apiPost("/api/copilot/turn", {
+      patient_uuid: uuid,
+      question: question,
+      prior_turns: priorTurns.slice(-6),
+      // An explicit clinician toggle (UC7) — never an invented NLP
+      // classification of the question text (Wave K.2, TRO-44).
+      ask_evidence: $("ask-evidence").checked,
+    });
     render(turn);
     const groundedText = turn.answer && turn.answer.grounded ? turn.answer.grounded.map((c) => c.text).join(" ") : "(no grounded answer)";
     priorTurns.push("Q: " + question + " A: " + groundedText);
@@ -379,15 +388,33 @@ async function ask() {
   }
 }
 
-// Uploads the selected file's metadata against the guarded document route
-// (TRO-16), in the exact wire shape DocumentUploadEndpoint parses
-// (patient_uuid, doc_type, file_path, file_size_bytes). KNOWN GAP (see the
-// top-of-file docblock): the route requires file_path to already be readable
-// on the SERVER's filesystem, which a static browser page cannot supply —
-// file.name is the closest honest substitute. Against a real server this
-// call fails (never silently), and the failure renders in the same honest
-// banner style as every other request here; extraction_status is always
-// surfaced on success so the result is never fire-and-forget.
+// Reads the chosen file as strict base64 via FileReader, stripping the
+// `data:<mime>;base64,` prefix readAsDataURL prepends — the wire carries raw
+// base64 only, matching what DocumentUploadEndpoint's content mode decodes
+// with base64_decode($value, true).
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const commaIndex = result.indexOf(",");
+      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error("Could not read the selected file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Uploads the selected file against the guarded document route (TRO-16), in
+// the browser-reachable content-mode wire shape DocumentUploadEndpoint's
+// content mode parses (patient_uuid, doc_type, filename, file_content_b64) —
+// GAP CLOSED (Wave K.2, TRO-43, 2026-07-14; see the top-of-file docblock and
+// docs/W2_LATENCY_COST.md): a browser cannot supply a server-side path, so
+// the route now accepts the raw bytes directly instead. A real deployment
+// therefore ingests this call rather than refusing it; a failure still
+// renders in the same honest banner style as every other request here, and
+// extraction_status is always surfaced on success so the result is never
+// fire-and-forget.
 async function upload() {
   const btn = $("upload");
   const status = $("upload-status");
@@ -402,11 +429,12 @@ async function upload() {
   btn.disabled = true;
   status.replaceChildren(el("div", "hint", "Uploading…"));
   try {
+    const fileContentB64 = await readFileAsBase64(file);
     const result = await apiPost("/api/copilot/document", {
       patient_uuid: uuid,
       doc_type: docType,
-      file_path: file.name,
-      file_size_bytes: file.size,
+      filename: file.name,
+      file_content_b64: fileContentB64,
     });
     const extractionStatus = result && result.extraction_status ? result.extraction_status : "unknown";
     const documentId = result && result.document_id ? result.document_id : "?";
