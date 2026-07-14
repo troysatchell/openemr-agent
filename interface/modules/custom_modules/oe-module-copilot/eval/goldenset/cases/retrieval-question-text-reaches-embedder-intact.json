@@ -1,0 +1,27 @@
+{
+    "id": "retrieval-question-text-reaches-embedder-intact",
+    "kind": "retrieval",
+    "category": "retrieval",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Input-side corruption reaching the vendor seam — the replay fixture for this case was recorded from THIS exact question text; a data-trust bug that garbles the query en route to the embedder produces an unseen key and throws, turning input corruption into a red gate (PS-2).",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Ground truth chunk: af.renal-hepatic-monitoring (protocol-af-anticoag-v1).",
+    "inputs": {
+        "question": "Per our anticoagulation protocol, when should renal function be rechecked for a patient on a DOAC?",
+        "top_k": 5,
+        "fixture_aim_chunk_ids": [
+            "af.renal-hepatic-monitoring"
+        ]
+    },
+    "expected": {
+        "chunk_ids_in_top_k": [
+            "af.renal-hepatic-monitoring"
+        ],
+        "top_chunk_id": null,
+        "dense_degraded": false,
+        "rerank_degraded": false
+    }
+}

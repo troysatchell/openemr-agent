@@ -58,6 +58,7 @@ use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Detectors\CriticalFinding;
 use OpenEMR\Modules\Copilot\Detectors\UnevaluableItem;
 use OpenEMR\Modules\Copilot\Orchestration\TurnOrchestrator;
+use OpenEMR\Modules\Copilot\Rag\RetrievalOutcome;
 use OpenEMR\Modules\Copilot\Synthesis\SourceRef;
 use OpenEMR\Modules\Copilot\Verification\CitationIndex;
 use OpenEMR\Modules\Copilot\Verification\VerifiedAnswer;
@@ -72,6 +73,12 @@ final readonly class TurnEndpoint
      * @param array<string, mixed> $input Raw route input:
      *        'patient_uuid' (string), 'question' (string), optional
      *        'prior_turns' (list<string>).
+     * @param ?RetrievalOutcome $evidence this turn's retrieved guideline
+     *        chunks (Wave K.2, TRO-44) — the caller (Bootstrap's live turn
+     *        route) resolves the `ask_evidence` request flag and the
+     *        supervised dispatch itself; this class only forwards the
+     *        result into `TurnOrchestrator::runTurn()`'s additive evidence
+     *        parameter. Absent (the default) reproduces Week 1 exactly.
      *
      * @return array{
      *     correlation_id: ?string,
@@ -90,13 +97,13 @@ final readonly class TurnEndpoint
      *         before the orchestrator (and therefore the chart read and the
      *         LLM) ever runs.
      */
-    public function handle(PhysicianContext $physician, array $input): array
+    public function handle(PhysicianContext $physician, array $input, ?RetrievalOutcome $evidence = null): array
     {
         $patientUuid = $this->requireNonBlankString($input, 'patient_uuid');
         $question = $this->requireNonBlankString($input, 'question');
         $priorTurns = $this->extractPriorTurns($input);
 
-        $result = $this->orchestrator->runTurn($physician, $patientUuid, $question, $priorTurns);
+        $result = $this->orchestrator->runTurn($physician, $patientUuid, $question, $priorTurns, $evidence);
 
         return [
             'correlation_id' => $result->correlationId,

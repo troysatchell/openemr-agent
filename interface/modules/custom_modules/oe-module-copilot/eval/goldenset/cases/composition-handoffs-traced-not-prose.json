@@ -1,0 +1,50 @@
+{
+    "id": "composition-handoffs-traced-not-prose",
+    "kind": "turn",
+    "category": "composition",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Handoff records acquiring prose — the trace is PHI-free BY SCHEMA; the route is reconstructible from typed step names plus the plan's stated reasons, never from free text in the recorder.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. StepRecord schema (T17); SupervisedTurnDispatcher handoff contract (TRO-32).",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": true,
+            "physician_engaged_critical_finding": true
+        },
+        "question": "Why is this flagged?",
+        "top_k": 5,
+        "chart": {
+            "labs": [
+                {
+                    "analyte": "Potassium",
+                    "value": 6.8,
+                    "unit": "mmol/L",
+                    "ref_id": "lab-potassium",
+                    "quote": "6.8 mmol/L"
+                }
+            ],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": []
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "EvidenceRetriever",
+            "ComposeAnswer"
+        ],
+        "trace_step_names": [
+            "handoff.evidence-retriever",
+            "handoff.compose-answer"
+        ],
+        "grounded_claim_indexes": [],
+        "rejected_claim_indexes": []
+    }
+}

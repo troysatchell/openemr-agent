@@ -11,6 +11,16 @@
  * reproduce it. This is the ONLY join key between the PHI-free trace log and
  * the PHI-carrying disclosure log.
  *
+ * Week 2 (TRO-33; W2_ARCHITECTURE.md §6 "Spans" + §8 observability
+ * extensions): the context grows parent/child span support. The
+ * supervisor's turn-level context is the root span (`parentSpanId` null);
+ * each worker invocation (`intake-extractor`, `evidence-retriever`, ...) is
+ * a child span of that root, and each worker's own sub-calls (extraction
+ * per-page, retrieval rerank, ...) are children of the worker span. Every
+ * span — root, worker, sub-call — carries the SAME `correlationId`, passed
+ * explicitly by `child()`; this is Week 1's no-ambient-state rule (S4)
+ * extended to a span tree instead of a flat per-turn context.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -24,10 +34,14 @@ namespace OpenEMR\Modules\Copilot\Observability;
 
 final readonly class TraceContext
 {
+    public string $spanId;
+
     public function __construct(
         public string $correlationId,
         public string $turnKind,
         public \DateTimeImmutable $startedAt,
+        ?string $spanId = null,
+        public ?string $parentSpanId = null,
     ) {
         if (trim($correlationId) === '') {
             throw new \DomainException('TraceContext requires a non-blank correlationId');
@@ -36,16 +50,35 @@ final readonly class TraceContext
         if (trim($turnKind) === '') {
             throw new \DomainException('TraceContext requires a non-blank turnKind');
         }
+
+        if ($parentSpanId !== null && trim($parentSpanId) === '') {
+            throw new \DomainException('TraceContext parentSpanId must be non-blank when provided');
+        }
+
+        $this->spanId = ($spanId === null || trim($spanId) === '') ? self::uuidV4() : $spanId;
     }
 
     /**
      * Mints a fresh v4 UUID correlation ID for one turn. Called exactly once
      * per runTurn() — the orchestrator boundary is the single choke point
-     * for minting (see TurnOrchestrator).
+     * for minting (see TurnOrchestrator). The result is a root span: a
+     * fresh spanId, no parentSpanId.
      */
     public static function start(string $turnKind, \DateTimeImmutable $now): self
     {
         return new self(self::uuidV4(), $turnKind, $now);
+    }
+
+    /**
+     * Derives a child span for a worker invocation or a worker's sub-call
+     * (W2_ARCHITECTURE.md §6). The correlationId is carried EXPLICITLY from
+     * this context — never read from an ambient global or static (S4) — and
+     * the child's parentSpanId is set to this context's spanId, so the span
+     * tree is reconstructible from the trace alone.
+     */
+    public function child(string $turnKind, \DateTimeImmutable $now): self
+    {
+        return new self($this->correlationId, $turnKind, $now, null, $this->spanId);
     }
 
     private static function uuidV4(): string

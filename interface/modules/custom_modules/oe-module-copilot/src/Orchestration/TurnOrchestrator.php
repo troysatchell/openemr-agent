@@ -20,6 +20,18 @@
  * grounds it against the same ReferenceIndex the payload's citation tokens
  * were minted from — one mint, one index.
  *
+ * Evidence seam (Wave K.2, TRO-44; W2_ARCHITECTURE.md §4/§5/§6; PS-14):
+ * `runTurn()`'s trailing `?RetrievalOutcome $evidence` parameter is an
+ * ADDITIVE reopening of the Week 1 contract — absent (the default), every
+ * prior behavior is unchanged. When the caller (the supervised dispatch
+ * composed in Bootstrap) supplies a non-empty outcome, its chunks enter the
+ * flattened chart data as a `guideline_evidence` data class — subject to the
+ * task's FieldAllowlist and disclosed like any other class (C1/C5) — and the
+ * verification index becomes the union of the chart's own SourceRefs plus
+ * every evidence chunk's SourceRef (one mint, one index, §4): a claim citing
+ * a chunk this turn never retrieved stays rejected, because grounding passes
+ * only through THIS turn's evidence, never the corpus at large.
+ *
  * Observability (T17; ARCHITECTURE.md §6; AUDIT S4/C4/C5; founder decision
  * 5, 2026-07-09): this orchestrator is the single choke point where a
  * correlation ID is minted, once per turn, and from there carried EXPLICITLY
@@ -57,6 +69,9 @@ use OpenEMR\Modules\Copilot\Observability\StepOutcome;
 use OpenEMR\Modules\Copilot\Observability\StepRecord;
 use OpenEMR\Modules\Copilot\Observability\TraceContext;
 use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
+use OpenEMR\Modules\Copilot\Rag\RetrievalOutcome;
+use OpenEMR\Modules\Copilot\Rag\RetrievedChunk;
+use OpenEMR\Modules\Copilot\Synthesis\ChartSnapshot;
 use OpenEMR\Modules\Copilot\Verification\CitationIndex;
 use OpenEMR\Modules\Copilot\Verification\ClaimVerifier;
 use OpenEMR\Modules\Copilot\Verification\ReferenceIndex;
@@ -95,12 +110,17 @@ final class TurnOrchestrator
 
     /**
      * @param list<string> $priorTurns prior Q/A turns — phrasing context only, never a fact source (§3.5)
+     * @param ?RetrievalOutcome $evidence this turn's retrieved guideline chunks (Wave K.2, TRO-44),
+     *        supplied by the caller's supervised dispatch — null (the default) or an empty-chunk
+     *        outcome reproduces Week 1 behavior exactly: no guideline_evidence data class, no
+     *        union mint, no phantom disclosure
      */
     public function runTurn(
         PhysicianContext $physician,
         string $patientUuid,
         string $question,
         array $priorTurns = [],
+        ?RetrievalOutcome $evidence = null,
     ): TurnResult {
         // Mint once, at the choke point, and carry explicitly from here on
         // (T17; S4).
@@ -134,13 +154,17 @@ final class TurnOrchestrator
         // so it survives the degraded path below (R6/R10).
         $citations = CitationIndex::fromChart($provided->chart);
 
-        // (c) Minimum-necessary payload, built from the freshly read chart only.
+        // (c) Minimum-necessary payload, built from the freshly read chart
+        // plus (Wave K.2, TRO-44) this turn's retrieved guideline evidence,
+        // when supplied — folded in as its own 'guideline_evidence' data
+        // class before the allowlist mechanics apply, exactly like any
+        // other class (C1/C5).
         $payload = $this->runStep(
             $context,
             'build_payload',
             fn (): DisclosedPayload => $this->payloadBuilder->build(
                 $this->task,
-                $this->flattener->flatten($provided->chart),
+                $this->withGuidelineEvidence($this->flattener->flatten($provided->chart), $evidence),
                 $physician->username,
                 $provided->patient->pid,
                 $today,
@@ -209,13 +233,15 @@ final class TurnOrchestrator
 
         // (g) The model's output is untrusted draft prose until grounded
         // against the same reference index the payload's citation tokens
-        // were minted from. The ground step is hand-rolled (like llm) so the
-        // verifier's verdict COUNTS ride on the trace (T19) — counts only,
-        // never claim content.
+        // were minted from — the UNION mint when evidence was supplied
+        // (Wave K.2, TRO-44; §4): chart refs plus this turn's retrieved
+        // guideline chunks, never the corpus at large. The ground step is
+        // hand-rolled (like llm) so the verifier's verdict COUNTS ride on
+        // the trace (T19) — counts only, never claim content.
         $groundStartedAt = $this->clock->now();
         $groundStart = hrtime(true);
         try {
-            $answer = $this->verifier->verify($response->claims, ReferenceIndex::fromChart($provided->chart));
+            $answer = $this->verifier->verify($response->claims, $this->referenceIndexFor($provided->chart, $evidence));
         } catch (\Throwable $e) {
             $this->traceRecorder->record(
                 $context,
@@ -282,6 +308,95 @@ final class TurnOrchestrator
         );
 
         return $result;
+    }
+
+    /**
+     * Folds this turn's retrieved guideline chunks into the flattened chart
+     * data as a `guideline_evidence` data class (Wave K.2, TRO-44) — subject
+     * to the task's FieldAllowlist and disclosed like any other class
+     * (C1/C5). Null evidence or an empty chunk list returns `$chartData`
+     * unchanged: no phantom data class, no disclosure drift from Week 1.
+     *
+     * `snippet` reuses the exact bounded value `RetrievedChunk::toSourceRef()`
+     * already computed for `quoteOrValue` — evidence entering the LLM
+     * boundary carries the same bounded snippet as the citation it mints.
+     *
+     * @param array<string, mixed> $chartData
+     * @return array<string, mixed>
+     */
+    private function withGuidelineEvidence(array $chartData, ?RetrievalOutcome $evidence): array
+    {
+        if ($evidence === null || $evidence->chunks === []) {
+            return $chartData;
+        }
+
+        $entries = [];
+        foreach ($evidence->chunks as $chunk) {
+            if (!$chunk instanceof RetrievedChunk) {
+                throw new \DomainException('RetrievalOutcome carried a non-RetrievedChunk element');
+            }
+
+            $ref = $chunk->toSourceRef();
+            $entries[] = [
+                'chunk' => $chunk->chunkId,
+                'source' => $chunk->sourceId,
+                'heading' => $chunk->heading,
+                'snippet' => $ref->quoteOrValue,
+                'ref' => ReferenceIndex::tokenFor($ref),
+            ];
+        }
+
+        $chartData['guideline_evidence'] = $entries;
+
+        return $chartData;
+    }
+
+    /**
+     * Builds this turn's verification index (Wave K.2, TRO-44; §4). Null
+     * evidence or an empty chunk list reproduces Week 1 exactly —
+     * `ReferenceIndex::fromChart()`, unchanged. Otherwise the union mint:
+     * every SourceRef reachable from the freshly read chart, PLUS every
+     * evidence chunk's SourceRef — so a claim can ground against a chart
+     * fact or against THIS turn's retrieved evidence, but never against a
+     * chunk the corpus holds that this turn never retrieved (no
+     * grounding-by-proxy).
+     */
+    private function referenceIndexFor(ChartSnapshot $chart, ?RetrievalOutcome $evidence): ReferenceIndex
+    {
+        if ($evidence === null || $evidence->chunks === []) {
+            return ReferenceIndex::fromChart($chart);
+        }
+
+        $refs = [];
+        foreach ($chart->medications as $medication) {
+            foreach ($medication->sources as $source) {
+                $refs[] = $source;
+            }
+        }
+        foreach ($chart->labs as $lab) {
+            foreach ($lab->sources as $source) {
+                $refs[] = $source;
+            }
+        }
+        foreach ($chart->allergies as $allergy) {
+            foreach ($allergy->sources as $source) {
+                $refs[] = $source;
+            }
+        }
+        foreach ($chart->followUps as $followUp) {
+            foreach ($followUp->sources as $source) {
+                $refs[] = $source;
+            }
+        }
+
+        foreach ($evidence->chunks as $chunk) {
+            if (!$chunk instanceof RetrievedChunk) {
+                throw new \DomainException('RetrievalOutcome carried a non-RetrievedChunk element');
+            }
+            $refs[] = $chunk->toSourceRef();
+        }
+
+        return ReferenceIndex::fromRefs($refs);
     }
 
     /**

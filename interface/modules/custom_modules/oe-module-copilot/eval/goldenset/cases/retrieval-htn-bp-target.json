@@ -1,0 +1,27 @@
+{
+    "id": "retrieval-htn-bp-target",
+    "kind": "retrieval",
+    "category": "retrieval",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Candidate-union SQL dropping the on-point chunk — the exact regression class the hybrid FULLTEXT+VECTOR union exists to prevent.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Ground truth chunk: htn.bp-target (protocol-htn-v1, derived from AHA/ACC 2025).",
+    "inputs": {
+        "question": "What blood-pressure target does our practice protocol set for hypertension follow-up?",
+        "top_k": 5,
+        "fixture_aim_chunk_ids": [
+            "htn.bp-target"
+        ]
+    },
+    "expected": {
+        "chunk_ids_in_top_k": [
+            "htn.bp-target"
+        ],
+        "top_chunk_id": "htn.bp-target",
+        "dense_degraded": false,
+        "rerank_degraded": false
+    }
+}

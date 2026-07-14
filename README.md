@@ -18,31 +18,66 @@
 
 # Clinical Co-Pilot — OpenEMR fork (Gauntlet AgentForge)
 
-This repository is a fork of OpenEMR being extended with a **Clinical Co-Pilot**:
-an AI agent embedded in OpenEMR that orients a physician to the next patient in
-the ~90 seconds between rooms. This branch lays the groundwork — the
-`oe-module-copilot` module skeleton (default-deny route wrapper, data-trust
-normalizers, external-AI disclosure logging) and the plan and evidence base in
-the documents below — while the agent's orientation flow itself is still being
-built.
+This repository is a fork of OpenEMR extended with a **Clinical Co-Pilot**: an
+AI agent embedded in OpenEMR that orients a physician to the next patient in
+the ~90 seconds between rooms. The work is split into two clearly separated
+scopes — the **Week 1 baseline** (shipped) and the **Week 2 multimodal
+evidence agent** (in progress) — described below.
 
 - **Deployed app (live):** <https://openemr-production-4eba.up.railway.app>
   — hosted on Railway (two services: OpenEMR + MariaDB); deployment scaffolding
   in [`deploy/railway/`](deploy/railway/) and [`railway.json`](railway.json).
   Demo data only; no real PHI.
-- **Audit — all findings (hard gate):** [`AUDIT.md`](AUDIT.md) — security,
-  performance, architecture, data quality, compliance & regulatory, with a
-  one-page summary and the AI-impact prioritization.
-- **Target user & use cases (hard gate):** [`USERS.md`](USERS.md) — Dr. Ellis
-  Tran (an explicitly *unvalidated* working hypothesis), his workflow, and use
-  cases UC1–UC5 with the "why an agent" answer for each.
-- **Agent architecture plan (hard gate):** [`ARCHITECTURE.md`](ARCHITECTURE.md)
-  — where the agent lives, how it reads data, authorization boundaries,
-  verification strategy, risks, and roadmap.
 - **Setup guide:** [CONTRIBUTING.md](CONTRIBUTING.md) (full instructions) —
   quick start: `cd docker/development-easy && docker compose up --detach
   --wait`, then open <http://localhost:8300/> (login `admin` / `pass`). See
   also [DOCKER_README.md](DOCKER_README.md) and `CLAUDE.md`.
+
+## Week 1 — baseline: read-only orientation agent (shipped)
+
+The Week 1 agent reads structured chart data and answers grounded questions —
+it never writes to the record.
+
+- **What it does:** in-EMR session panel (glanceable snapshot + multi-turn
+  grounded Q&A), deterministic must-not-miss detectors (panic labs, drug–drug,
+  drug–allergy, open follow-ups) that bypass the model entirely, claim
+  verification with per-claim provenance, minimum-necessary LLM payloads with
+  disclosure logging, PHI-free JSONL tracing with a correlation ID per turn,
+  and a CI-armed clinical-accuracy gate.
+- **Where it lives:** `interface/modules/custom_modules/oe-module-copilot/`
+  (module + event subscriptions; no core edits). Tests:
+  `tests/Tests/Isolated/Copilot/` (runs via `composer phpunit-isolated`).
+- **Environment:** `ANTHROPIC_API_KEY` — the only AI-related variable. Without
+  it, turns degrade honestly: deterministic findings intact, no prose answer.
+- **Docs (Week 1 hard gates):** [`AUDIT.md`](AUDIT.md) — audit findings with
+  one-page summary; [`USERS.md`](USERS.md) — Dr. Ellis Tran and use cases
+  UC1–UC5; [`ARCHITECTURE.md`](ARCHITECTURE.md) — where the agent lives, data
+  access, authorization boundaries, verification, risks, roadmap.
+
+## Week 2 — multimodal evidence agent (in progress)
+
+Week 2 adds the ability to **see clinical documents** and cite evidence:
+ingestion of a lab PDF and an intake form with strict-schema VLM extraction,
+hybrid RAG + rerank over a small clinical-guideline corpus, a supervisor +
+two workers (intake-extractor, evidence-retriever) with logged handoffs, an
+extended citation contract with click-to-source and PDF bounding-box overlay,
+and a 50-case PR-blocking eval gate with boolean rubrics.
+
+- **Write scope:** Week 1's never-write rule is amended by a **scoped,
+  founder-approved carve-out (2026-07-13)**: the module may attach uploaded
+  source documents and persist extracted facts as observations
+  provenance-linked to their source — nothing else. Clinical write-back
+  (notes/meds/orders) remains out of scope.
+- **Plan (Week 2 architecture doc):** [`W2_ARCHITECTURE.md`](W2_ARCHITECTURE.md)
+  — ingestion flow, worker graph, RAG design, eval gate, failure modes, data
+  model, risks, and tradeoffs.
+- **Status:** planning complete; implementation not started. As each stage
+  lands, this section gains the exact run instructions (branch, environment
+  variables — e.g. the Cohere key for embeddings/rerank — and any new
+  services) so the Week 2 flow can be run without guessing.
+
+## Additional evidence docs
+
 - **Onboarding / evidence docs:** [`docs/onboarding/`](docs/onboarding/) —
   start at [`CURRENT_ARCHITECTURE.md`](docs/onboarding/CURRENT_ARCHITECTURE.md).
 

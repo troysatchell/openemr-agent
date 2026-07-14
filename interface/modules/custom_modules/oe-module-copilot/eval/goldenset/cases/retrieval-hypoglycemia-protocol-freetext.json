@@ -1,0 +1,27 @@
+{
+    "id": "retrieval-hypoglycemia-protocol-freetext",
+    "kind": "retrieval",
+    "category": "retrieval",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "critical.* chunks vanishing from the hybrid index — they are reached by the deterministic map on the conditional edge, but must ALSO stay reachable by free-text ask (corpus README §6).",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Ground truth chunk: critical.glucose (protocol-critical-values-v1; first governance widening 2026-07-13).",
+    "inputs": {
+        "question": "What is our office protocol for a critical low glucose value?",
+        "top_k": 5,
+        "fixture_aim_chunk_ids": [
+            "critical.glucose"
+        ]
+    },
+    "expected": {
+        "chunk_ids_in_top_k": [
+            "critical.glucose"
+        ],
+        "top_chunk_id": "critical.glucose",
+        "dense_degraded": false,
+        "rerank_degraded": false
+    }
+}

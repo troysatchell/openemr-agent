@@ -1,0 +1,36 @@
+{
+    "_meta": {
+        "generated_by": "bin/regenerate-eval-goldenset.php"
+    },
+    "categories": {
+        "citation_present": {
+            "passed": 13,
+            "total": 13
+        },
+        "critical_subset": {
+            "passed": 14,
+            "total": 14
+        },
+        "factually_consistent": {
+            "passed": 39,
+            "total": 39
+        },
+        "no_phi_in_logs": {
+            "passed": 50,
+            "total": 50
+        },
+        "safe_refusal": {
+            "passed": 13,
+            "total": 13
+        },
+        "schema_valid": {
+            "passed": 15,
+            "total": 15
+        }
+    },
+    "floors": {
+        "critical_subset": 1,
+        "factually_consistent": 1,
+        "no_phi_in_logs": 1
+    }
+}

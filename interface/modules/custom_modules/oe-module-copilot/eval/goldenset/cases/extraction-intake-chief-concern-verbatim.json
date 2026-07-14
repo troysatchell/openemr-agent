@@ -1,0 +1,101 @@
+{
+    "id": "extraction-intake-chief-concern-verbatim",
+    "kind": "extraction",
+    "category": "extraction",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs",
+        "schema_valid"
+    ],
+    "_guards_against": "Intake fact loss between parse and candidate write — a present chief concern, medication, or allergy that never materializes as a reviewable candidate is a silent hole in reconciliation.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels.",
+    "inputs": {
+        "doc_type": "intake_form",
+        "filename": "intake.pdf",
+        "document_bytes": "%PDF-1.7 goldenset extraction-intake-chief-concern-verbatim synthetic fixture bytes\n",
+        "vlm_wire": {
+            "documentId": "999999",
+            "chiefConcern": {
+                "isPresent": true,
+                "value": "Shortness of breath on exertion",
+                "confidence": 0.94,
+                "citation": {
+                    "source_type": "intake_form",
+                    "source_id": "999999",
+                    "page_or_section": "1",
+                    "field_or_chunk_id": "chiefConcern",
+                    "quote_or_value": "Shortness of breath on exertion"
+                }
+            },
+            "currentMedications": [
+                {
+                    "isPresent": true,
+                    "value": "Lisinopril 10mg daily",
+                    "confidence": 0.92,
+                    "citation": {
+                        "source_type": "intake_form",
+                        "source_id": "999999",
+                        "page_or_section": "1",
+                        "field_or_chunk_id": "currentMedications[0]",
+                        "quote_or_value": "Lisinopril 10mg daily"
+                    }
+                },
+                {
+                    "isPresent": true,
+                    "value": "Metformin 500mg twice daily",
+                    "confidence": 0.91,
+                    "citation": {
+                        "source_type": "intake_form",
+                        "source_id": "999999",
+                        "page_or_section": "1",
+                        "field_or_chunk_id": "currentMedications[1]",
+                        "quote_or_value": "Metformin 500mg twice daily"
+                    }
+                }
+            ],
+            "allergies": [
+                {
+                    "isPresent": true,
+                    "value": "Penicillin - hives",
+                    "confidence": 0.9,
+                    "citation": {
+                        "source_type": "intake_form",
+                        "source_id": "999999",
+                        "page_or_section": "1",
+                        "field_or_chunk_id": "allergies[0]",
+                        "quote_or_value": "Penicillin - hives"
+                    }
+                }
+            ],
+            "familyHistory": [],
+            "demographics": []
+        }
+    },
+    "expected": {
+        "extraction_status": "extracted",
+        "document_attached": true,
+        "intake_candidates": [
+            {
+                "field_path": "chiefConcern",
+                "value": "Shortness of breath on exertion",
+                "confidence": 0.94
+            },
+            {
+                "field_path": "currentMedications[0]",
+                "value": "Lisinopril 10mg daily",
+                "confidence": 0.92
+            },
+            {
+                "field_path": "currentMedications[1]",
+                "value": "Metformin 500mg twice daily",
+                "confidence": 0.91
+            },
+            {
+                "field_path": "allergies[0]",
+                "value": "Penicillin - hives",
+                "confidence": 0.9
+            }
+        ]
+    }
+}

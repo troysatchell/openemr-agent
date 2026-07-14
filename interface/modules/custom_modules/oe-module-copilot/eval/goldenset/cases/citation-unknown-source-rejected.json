@@ -1,0 +1,58 @@
+{
+    "id": "citation-unknown-source-rejected",
+    "kind": "turn",
+    "category": "citation",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "no_phi_in_logs",
+        "safe_refusal"
+    ],
+    "_guards_against": "A fabricated citation resolving — a token for evidence this turn never retrieved must fail to resolve, whatever plausible corpus id it carries.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": true,
+            "critical_finding_present": false,
+            "physician_engaged_critical_finding": false
+        },
+        "question": "What blood-pressure target does our protocol recommend at follow-up?",
+        "top_k": 5,
+        "chart": {
+            "labs": [],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": [
+            {
+                "text": "Our protocol sets an A1c target of less than 8 percent for this visit type.",
+                "cites": [
+                    {
+                        "source_type": "guideline",
+                        "source_id": "protocol-t2dm-v1",
+                        "field_or_chunk_id": "t2dm.glycemic-target"
+                    }
+                ]
+            }
+        ],
+        "fixture_aim_chunk_ids": [
+            "htn.bp-target"
+        ]
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "EvidenceRetriever",
+            "ComposeAnswer"
+        ],
+        "evidence_contains_chunk_ids": [
+            "htn.bp-target"
+        ],
+        "grounded_claim_indexes": [],
+        "rejected_claim_indexes": [
+            0
+        ]
+    }
+}

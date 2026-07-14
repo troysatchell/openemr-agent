@@ -1,0 +1,27 @@
+{
+    "id": "retrieval-af-doac-first-line",
+    "kind": "retrieval",
+    "category": "retrieval",
+    "adjudicated": true,
+    "rubrics": [
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Rerank-consume regression — the reranker's ordering being computed and then ignored, leaving union order to reach the answer surface.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Ground truth chunk: af.doac-vs-warfarin (protocol-af-anticoag-v1, derived from 2023 ACC/AHA/ACCP/HRS AF).",
+    "inputs": {
+        "question": "Do we prefer a DOAC or warfarin for stroke prevention in atrial fibrillation?",
+        "top_k": 5,
+        "fixture_aim_chunk_ids": [
+            "af.doac-vs-warfarin"
+        ]
+    },
+    "expected": {
+        "chunk_ids_in_top_k": [
+            "af.doac-vs-warfarin"
+        ],
+        "top_chunk_id": "af.doac-vs-warfarin",
+        "dense_degraded": false,
+        "rerank_degraded": false
+    }
+}

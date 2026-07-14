@@ -63,9 +63,12 @@ highest-leverage upgrade when available.
 ## 1. Scope
 
 - **In (v1):** read-only orientation for the physician's own established patients, delivered through a **multi-turn conversational agent** — it **opens with a glanceable snapshot**, then answers **on-demand follow-ups** grounded in the chart; plus an overnight pre-chart of the panel; everything traceable to its source. *(The conversational surface is the core; the snapshot is its opening turn.)*
-- **Out (v1):** no write-back (notes/orders); no autonomous action; local records
+- **Out (v1):** no clinical write-back (notes/orders); no autonomous action; local records
   only (accepted blind spot for cross-system changes); not the covering /
-  new-patient states (fast-follow — higher value, harder).
+  new-patient states (fast-follow — higher value, harder). *Scoped Week 2
+  amendment (founder-approved 2026-07-13): document-attach and
+  provenance-linked derived observations are permitted writes — see
+  `W2_ARCHITECTURE.md` §1; clinical write-back stays out.*
 - **Principle:** orientation aid, human-in-the-loop, never autonomous.
 
 **Capability → use-case trace** (per the case-study rule: no capability without
@@ -377,7 +380,11 @@ Phase 3 and the arming of the accuracy gate — and Phases 3–5 gate sequential
   every item.
 - **Phase 4 — Covering / new-patient states + on-demand** (where degraded-mode
   matters most).
-- **Phase 5 — Write-back** *(deferred, separately gated, not v1).*
+- **Phase 5 — Write-back** *(deferred, separately gated, not v1).* *Scoped
+  Week 2 amendment (founder-approved 2026-07-13): document-attach + derived
+  observations provenance-linked to their source document are carved out as
+  permitted writes (`W2_ARCHITECTURE.md` §1); full clinical write-back
+  (notes, meds, orders) remains deferred here.*
 
 **Also deferred — unattended overnight batch.** True cold-start pre-charting (he was
 never online) via the per-physician read-only **offline-grant** model (§4). The
@@ -445,7 +452,10 @@ snapshot demo.
 
 ---
 
-*This document is forward-looking — nothing is implemented yet. The audit
+*This document was written forward-looking at Week 1 planning; the Week 1
+baseline it plans (the read-only orientation agent, Phases 1–3) has since
+shipped in `oe-module-copilot`. Week 2 — the multimodal evidence agent — is
+planned separately in [`W2_ARCHITECTURE.md`](W2_ARCHITECTURE.md). The audit
 ([`AUDIT.md`](AUDIT.md); its AI-impact prioritization is Part 0) is the
 evidence base for every finding cited here (IDs `S#`/`P#`/`D#`/`C#`); the use
 cases (UC1–UC5) are defined in [`USERS.md`](USERS.md) §5; the as-found system

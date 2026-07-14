@@ -1,0 +1,55 @@
+{
+    "id": "composition-engaged-finding-fires-mapped-chunk",
+    "kind": "turn",
+    "category": "composition",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "The conditional edge firing into similarity search instead of the exact map — an engaged panic-potassium finding retrieves critical.potassium BY ID, deterministically, with zero vendor calls (TRO-31).",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. CriticalFindingChunkMap: PanicLab/potassium -> critical.potassium; W2_ARCHITECTURE.md §6.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": true,
+            "physician_engaged_critical_finding": true
+        },
+        "question": "Why is this flagged and what do we do?",
+        "top_k": 5,
+        "chart": {
+            "labs": [
+                {
+                    "analyte": "Potassium",
+                    "value": 6.8,
+                    "unit": "mmol/L",
+                    "ref_id": "lab-potassium",
+                    "quote": "6.8 mmol/L"
+                }
+            ],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": []
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "EvidenceRetriever",
+            "ComposeAnswer"
+        ],
+        "mapped_chunk_id": "critical.potassium",
+        "evidence_contains_chunk_ids": [
+            "critical.potassium"
+        ],
+        "vendor_calls": {
+            "embed": 0,
+            "rerank": 0
+        },
+        "grounded_claim_indexes": [],
+        "rejected_claim_indexes": []
+    }
+}

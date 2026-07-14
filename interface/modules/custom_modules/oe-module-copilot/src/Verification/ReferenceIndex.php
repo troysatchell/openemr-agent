@@ -4,10 +4,16 @@
  * Lookup table from citation token to the chart's SourceRef it names
  * (T14; R6/R10; ARCHITECTURE.md §3.4).
  *
- * tokenFor() is the ONE canonical mint for the "sourceType:sourceId" token
- * format — anything that flattens a ChartSnapshot into an LLM-facing
- * payload MUST use this same method to label its citable facts, or the
- * tokens the model echoes back will never resolve.
+ * tokenFor() is the ONE canonical mint for the citation token format —
+ * anything that flattens a ChartSnapshot, a document extraction, or a
+ * retrieved guideline chunk into an LLM-facing payload MUST use this same
+ * method to label its citable facts, or the tokens the model echoes back
+ * will never resolve. The one-mint rule now spans all source classes
+ * (W2_ARCHITECTURE.md §4): a SourceRef with a null fieldOrChunkId mints the
+ * unchanged Week 1 "sourceType:sourceId" token; a SourceRef carrying a
+ * fieldOrChunkId mints "sourceType:sourceId#fieldOrChunkId" — without the
+ * fragment, two chunks of one guideline document would collapse into a
+ * single token and provenance would silently blur.
  *
  * fromChart() walks every section of a ChartSnapshot (medications, labs,
  * allergies, AND follow-ups — all four are citable) and indexes every
@@ -17,6 +23,17 @@
  * folding, no prefix matching. Chart content (and anything an LLM echoes
  * back) is untrusted free text (AUDIT D1); fuzzy matching here would
  * manufacture provenance that was never actually cited.
+ *
+ * fromRefs() is the §4 one-mint entry point for non-chart source classes:
+ * document extractions, guideline chunks, and derived-observation refs all
+ * enter the SAME index the citation tokens are minted from — fromChart()
+ * remains the chart-snapshot path, unchanged. Every element must be a
+ * SourceRef (parse-boundary discipline: this is a boundary between untrusted
+ * assembly code and the verifier, so the shape is checked, not assumed); a
+ * non-SourceRef element throws rather than silently coercing or skipping.
+ * Duplicate tokens collapse to the FIRST ref supplied (first-write-wins) —
+ * the opposite of fromChart()'s last-write-wins-by-iteration-order; callers
+ * control precedence by ordering the input list.
  *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
@@ -44,7 +61,13 @@ final readonly class ReferenceIndex
 
     public static function tokenFor(SourceRef $ref): string
     {
-        return $ref->sourceType . ':' . $ref->sourceId;
+        $base = $ref->sourceType . ':' . $ref->sourceId;
+
+        if ($ref->fieldOrChunkId === null) {
+            return $base;
+        }
+
+        return $base . '#' . $ref->fieldOrChunkId;
     }
 
     public static function fromChart(ChartSnapshot $chart): self
@@ -70,6 +93,33 @@ final readonly class ReferenceIndex
             foreach ($followUp->sources as $source) {
                 $sourcesByToken[self::tokenFor($source)] = $source;
             }
+        }
+
+        return new self($sourcesByToken);
+    }
+
+    /**
+     * The refs arrive untyped at this boundary (extraction output and
+     * retrieval results are assembled from untrusted parses): elements are
+     * validated with instanceof, never assumed from a declared type.
+     *
+     * @param list<mixed> $refs
+     */
+    public static function fromRefs(array $refs): self
+    {
+        $sourcesByToken = [];
+
+        foreach ($refs as $ref) {
+            if (!$ref instanceof SourceRef) {
+                throw new \DomainException('ReferenceIndex::fromRefs requires every element to be a SourceRef');
+            }
+
+            $token = self::tokenFor($ref);
+            if (isset($sourcesByToken[$token])) {
+                continue;
+            }
+
+            $sourcesByToken[$token] = $ref;
         }
 
         return new self($sourcesByToken);

@@ -1,0 +1,62 @@
+{
+    "id": "citation-detector-ref-grounds",
+    "kind": "turn",
+    "category": "citation",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "Detector references excluded from the shared mint — the 'why flagged' half of a critical answer losing its citation while the guideline half keeps one.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. ARUP-derived panic threshold; detector provenance is the Week 1 shape.",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": false,
+            "critical_finding_present": true,
+            "physician_engaged_critical_finding": true
+        },
+        "question": "Why is this potassium flagged?",
+        "top_k": 5,
+        "chart": {
+            "labs": [
+                {
+                    "analyte": "Potassium",
+                    "value": 6.8,
+                    "unit": "mmol/L",
+                    "ref_id": "lab-potassium",
+                    "quote": "6.8 mmol/L"
+                }
+            ],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": [
+            {
+                "text": "Potassium 6.8 mmol/L exceeds the practice panic threshold.",
+                "cites": [
+                    {
+                        "source_type": "detector",
+                        "source_id": "panic-potassium-high"
+                    }
+                ]
+            }
+        ]
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "EvidenceRetriever",
+            "ComposeAnswer"
+        ],
+        "grounded_claim_indexes": [
+            0
+        ],
+        "rejected_claim_indexes": [],
+        "grounded_citation_source_types_include": [
+            "detector"
+        ]
+    }
+}

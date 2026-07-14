@@ -1,0 +1,61 @@
+{
+    "id": "citation-evidence-answer-cites-guideline",
+    "kind": "turn",
+    "category": "citation",
+    "adjudicated": true,
+    "rubrics": [
+        "citation_present",
+        "factually_consistent",
+        "no_phi_in_logs"
+    ],
+    "_guards_against": "A citation minted against the wrong chunk — the token resolves, the highlight lands on the wrong protocol text, and the physician verifies the wrong evidence.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels. Ground truth chunk: htn.bp-target (protocol-htn-v1).",
+    "inputs": {
+        "state": {
+            "is_snapshot_turn": false,
+            "has_pending_unextracted_document": false,
+            "question_asks_for_evidence": true,
+            "critical_finding_present": false,
+            "physician_engaged_critical_finding": false
+        },
+        "question": "What blood-pressure target does our protocol recommend at follow-up?",
+        "top_k": 5,
+        "chart": {
+            "labs": [],
+            "medications": [],
+            "allergies": [],
+            "follow_ups": []
+        },
+        "draft_claims": [
+            {
+                "text": "The practice protocol sets an office blood-pressure target for most adults on hypertension follow-up.",
+                "cites": [
+                    {
+                        "source_type": "guideline",
+                        "source_id": "protocol-htn-v1",
+                        "field_or_chunk_id": "htn.bp-target"
+                    }
+                ]
+            }
+        ],
+        "fixture_aim_chunk_ids": [
+            "htn.bp-target"
+        ]
+    },
+    "expected": {
+        "plan_step_kinds": [
+            "EvidenceRetriever",
+            "ComposeAnswer"
+        ],
+        "evidence_contains_chunk_ids": [
+            "htn.bp-target"
+        ],
+        "grounded_claim_indexes": [
+            0
+        ],
+        "rejected_claim_indexes": [],
+        "grounded_citation_source_types_include": [
+            "guideline"
+        ]
+    }
+}

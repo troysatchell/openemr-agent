@@ -1,12 +1,29 @@
 ##
-# Clinical-accuracy gate (T11; ARCHITECTURE.md §6). Runs the whole copilot
-# isolated contract surface — the golden-chart scorer, loader, and the gate
-# itself. The gate is ARMED (2026-07-08): CriticalSubsetGateTest evaluates
-# the §3a reference-grounded adjudicated set (GoldenChart/adjudicated/)
-# against the real detectors, so a critical-subset miss fails this job.
-# §3b judgment items never gate. A red critical-subset gate is a
-# stop-and-escalate, never a fixture regeneration. Discovered automatically
-# by all-checks-passed.yml.
+# Clinical-accuracy gate (T11; ARCHITECTURE.md §6; W2_ARCHITECTURE.md §7).
+# Two jobs, split by DB dependency (TRO-37 / TRO-42):
+#
+#   clinical-accuracy-gate — the fast isolated contract surface (golden-chart
+#     scorer, loader, and gate; Week 2 schema/citation/routing/comparator
+#     contracts). DB-less by construction so it stays fast enough that
+#     nobody routes around it.
+#
+#   eval-gate — the Week 2 50-case golden-set gate (PS-1/PS-13): runs
+#     against a REAL MariaDB 11.8 service (FULLTEXT + native VECTOR — the
+#     tier the module's hybrid-RAG schema requires; an in-memory fake of
+#     vector search is exactly the kind of fake that lies), a real OpenEMR
+#     install via `./cli install` (the integration-tests.yml pattern), and
+#     the DB-backed copilot gate suite — including the GateRedProofTest
+#     meta-test that proves the gate goes red on a committed synthetic
+#     regression (R-W5). Vendor boundary (Anthropic/Cohere) is
+#     fixture-stubbed at the injectable transport, so the job defines no
+#     vendor API keys — zero network by construction.
+#
+# The gate is ARMED (2026-07-08): CriticalSubsetGateTest evaluates the §3a
+# reference-grounded adjudicated set (GoldenChart/adjudicated/) against the
+# real detectors, so a critical-subset miss fails this job. §3b judgment
+# items never gate. A red critical-subset or eval-category gate is a
+# stop-and-escalate, never a fixture/baseline regeneration. Discovered
+# automatically by all-checks-passed.yml.
 
 name: clinical-accuracy-gate
 
@@ -15,10 +32,12 @@ on:
     branches:
     - master
     - rel-*
+    - deploy/railway
   pull_request:
     branches:
     - master
     - rel-*
+    - deploy/railway
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.number || github.run_id }}
@@ -41,3 +60,55 @@ jobs:
 
     - name: Run copilot clinical-accuracy contract tests
       run: vendor/bin/phpunit -c phpunit-isolated.xml tests/Tests/Isolated/Copilot
+
+  eval-gate:
+    name: eval-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    env:
+      # ./cli install's container bootstrap requires an environment name
+      # (firehed/container AutoDetect) — same setting integration-tests.yml
+      # applies workflow-wide; scoped to this job since the isolated
+      # contract job never boots the app container.
+      ENVIRONMENT: ci
+
+    services:
+      mysql:
+        image: mariadb:11.8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: topsecret
+          MYSQL_DATABASE: openemr_test
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=3s
+          --health-timeout=2s
+          --health-retries=20
+
+        ports:
+        - 3306:3306
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+
+    - name: Setup PHP and Composer
+      uses: ./.github/actions/setup-php-composer
+      with:
+        php-version: '8.5'
+
+    - name: Run CLI installer
+      run: ./cli install --db-host=127.0.0.1 --db-port=3306 --db-root-user=root --db-root-password=root --db-user=ci --db-password=topsecret --db-name=openemr_test --oe-admin-username=admin --oe-admin-password=pass --no-interaction -vvv
+
+    - name: Verify installation
+      run: |
+        mysql -h 127.0.0.1 -u ci -ptopsecret openemr_test \
+          -e "SELECT COUNT(*) as user_count FROM users WHERE username='admin';" \
+          | grep -q "1"
+
+    - name: Run copilot eval gate (DB-backed)
+      run: vendor/bin/phpunit -c phpunit.xml tests/Tests/Services/Copilot
