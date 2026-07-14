@@ -33,6 +33,9 @@ use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirServiceFactory;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
 use OpenEMR\Modules\Copilot\Ingestion\DocumentIngestion;
+use OpenEMR\Modules\Copilot\Ingestion\DocumentIngestionService;
+use OpenEMR\Modules\Copilot\Ingestion\PatientDocumentAttacher;
+use OpenEMR\Modules\Copilot\Ingestion\VlmDocumentExtractor;
 use OpenEMR\Modules\Copilot\Llm\AnthropicLlmClient;
 use OpenEMR\Modules\Copilot\Llm\ChartDataFlattener;
 use OpenEMR\Modules\Copilot\Llm\CopilotTask;
@@ -238,22 +241,11 @@ class Bootstrap
                 }
 
                 try {
-                    // TRO-17/18 provide the real DocumentIngestion (attach
-                    // via DocumentService + dedupe-by-hash, then VLM
-                    // extraction, §2 steps 2-5). Until then, this stub keeps
-                    // the route wired and guarded end to end — wire
-                    // validation (§10 type/size allowlist) already runs for
-                    // real — while refusing to pretend ingestion works.
-                    $ingestion = new class implements DocumentIngestion {
-                        public function attachAndExtract(
-                            PhysicianContext $physician,
-                            string $patientUuid,
-                            string $filePath,
-                            string $docType,
-                        ): array {
-                            throw new \RuntimeException('document ingestion not yet available (TRO-17/18)');
-                        }
-                    };
+                    // TRO-17/18/32 compose the real DocumentIngestion
+                    // (attach via DocumentService + dedupe-by-hash, then VLM
+                    // extraction + persistence, §2 steps 2-5). See
+                    // buildDocumentIngestion() for the no-key degrade path.
+                    $ingestion = self::buildDocumentIngestion();
                     $endpoint = new DocumentUploadEndpoint($ingestion);
 
                     // Normalise decoded JSON to string keys — see the turn
@@ -272,11 +264,20 @@ class Bootstrap
                         'error' => 'Invalid request: patient_uuid, doc_type, file_path, '
                             . 'and file_size_bytes are required.',
                     ];
-                } catch (\RuntimeException) {
-                    // Ingestion port not yet implemented (TRO-17/18).
+                } catch (LlmUnavailableException) {
+                    // No API key configured — buildDocumentIngestion()'s
+                    // no-key degrade path throws here (R11: degrade
+                    // honestly rather than silently faking ingestion).
                     http_response_code(501);
 
                     return ['error' => 'Document ingestion is not yet available.'];
+                } catch (\RuntimeException) {
+                    // Genuine storage/transaction failure (§2 failure table:
+                    // storage failure -> generic error, nothing persisted).
+                    // Generic by design — never echo internals (R11).
+                    http_response_code(500);
+
+                    return ['error' => 'Document ingestion failed.'];
                 }
             }
         );
@@ -357,5 +358,83 @@ class Bootstrap
             $clock,
             new JsonlTraceRecorder(self::defaultTracePath()),
         );
+    }
+
+    /**
+     * Composition root for the document-ingestion route (TRO-32; §2). DB-
+     * backed (via the composed writers) and NOT covered by the isolated
+     * suite — verified by the DB-backed
+     * `tests/Tests/Services/Copilot/DocumentIngestionServiceTest.php` and at
+     * live-stack smoke (Wave 3).
+     *
+     * The VLM transport reads ANTHROPIC_API_KEY from the environment — same
+     * sanctioned key source as buildTurnOrchestrator() (never the DB, never
+     * committed) — and mirrors AnthropicLlmClient::forAnthropicApi()'s own
+     * Guzzle client construction, because VlmDocumentExtractor takes the raw
+     * transport closure directly rather than an AnthropicLlmClient instance.
+     * When the key is absent, ingestion degrades to the same throwing stub
+     * the route used before this port was composed, so an unconfigured
+     * deployment still gets a wired, guarded route that reports 501 instead
+     * of silently pretending to ingest (R11).
+     */
+    public static function buildDocumentIngestion(): DocumentIngestion
+    {
+        $apiKey = getenv('ANTHROPIC_API_KEY') ?: '';
+        if (trim($apiKey) === '') {
+            return new class implements DocumentIngestion {
+                public function attachAndExtract(
+                    PhysicianContext $physician,
+                    string $patientUuid,
+                    string $filePath,
+                    string $docType,
+                ): array {
+                    throw new LlmUnavailableException('document ingestion not yet available (no LLM API key configured)');
+                }
+            };
+        }
+
+        $httpClient = new \GuzzleHttp\Client([
+            'base_uri' => 'https://api.anthropic.com',
+            'timeout' => 60,
+            'connect_timeout' => 5,
+            'http_errors' => false,
+        ]);
+
+        /**
+         * @param array<string, mixed> $requestBody
+         *
+         * @return array{int, array<string, mixed>}
+         */
+        $transport = static function (array $requestBody) use ($httpClient, $apiKey): array {
+            $response = $httpClient->post('/v1/messages', [
+                'headers' => [
+                    'x-api-key' => $apiKey,
+                    'anthropic-version' => '2023-06-01',
+                    'content-type' => 'application/json',
+                ],
+                'json' => $requestBody,
+            ]);
+
+            $decoded = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+            if (!is_array($decoded)) {
+                throw new \RuntimeException('The VLM API response body did not decode to a JSON object');
+            }
+
+            // Normalise to string keys so the transport contract's shape holds.
+            $body = [];
+            foreach ($decoded as $key => $value) {
+                $body[(string) $key] = $value;
+            }
+
+            return [$response->getStatusCode(), $body];
+        };
+
+        $extractor = new VlmDocumentExtractor(
+            $transport,
+            EventAuditDisclosureLogger::forEventAuditLogger(),
+            AnthropicLlmClient::DEFAULT_MODEL,
+        );
+
+        return new DocumentIngestionService(new PatientDocumentAttacher(), $extractor);
     }
 }
