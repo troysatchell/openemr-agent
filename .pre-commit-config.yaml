@@ -238,3 +238,19 @@ repos:
     language: system
     stages:
     - commit-msg
+
+  # PR-blocking half of the Week 2 eval-gate MVP row (TRO-42; PS-13;
+  # W2_ARCHITECTURE.md §7): the same DB-backed 50-case golden-set gate CI
+  # runs, caught locally before a push instead of only after. `stages:
+  # [pre-push]` overrides this file's `default_stages: [pre-commit]`, so it
+  # never slows down a plain commit. Runs in-container via the
+  # `openemr-cmd prek` routing (CLAUDE.md's pre-commit-hooks section) — the
+  # dev stack must be up (`openemr-cmd up` / `worktree up`) since the suite
+  # needs the real MariaDB service.
+  - id: clinical-eval-gate
+    name: Clinical eval gate (Week 2 DB-backed golden set)
+    entry: vendor/bin/phpunit -c phpunit.xml tests/Tests/Services/Copilot/Eval
+    language: system
+    pass_filenames: false
+    stages:
+    - pre-push

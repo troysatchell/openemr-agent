@@ -434,8 +434,14 @@ the graph is a small explicit state machine the module owns:
 - **Where it runs + budget:** pre-commit/pre-push hook (prek, in-container)
   + the split `clinical-accuracy-gate.yml` jobs in CI. Zero network by
   construction (vendor fixtures), 50 cases, small fixture corpus — the
-  PR-blocking job must stay fast enough that nobody routes around it; the
-  concrete time budget is set from the first measured run and recorded here.
+  PR-blocking job must stay fast enough that nobody routes around it.
+  **PR-blocking eval-gate job budget: 12 minutes.** Basis: the in-container
+  DB-backed suite (`tests/Tests/Services/Copilot`, 60 tests) measured
+  3.04s–6.66s wall time across two local runs on 2026-07-14; the CI job adds
+  checkout, Composer install, and `./cli install` schema setup on top of
+  that (the integration-tests.yml pattern), realistically 3–6 minutes total,
+  so the budget applies ~2x headroom over the top of that range. Exceeding
+  the budget is a regression, not a threshold to raise quietly.
 - **`no_phi_in_logs` is verified, not asserted — and the logs are dumb so the
   detector can be:** trace events carry **references only** — chunk ids, not
   snippet text; field paths, not values — from PHI and non-PHI sources
