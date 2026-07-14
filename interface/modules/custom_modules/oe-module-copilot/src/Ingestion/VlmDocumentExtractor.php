@@ -184,7 +184,7 @@ final readonly class VlmDocumentExtractor
             'lab_pdf' => <<<'SHAPE'
                 Produce exactly this shape (one analytes[] entry per result row):
                 {
-                  "documentId": "",
+                  "documentId": "0",
                   "analytes": [
                     {
                       "testName": {"isPresent": true, "value": "Potassium", "confidence": 0.98, "citation": {"source_type": "lab_pdf", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "analytes[0].testName", "quote_or_value": "Potassium"}},
@@ -196,19 +196,19 @@ final readonly class VlmDocumentExtractor
                     }
                   ]
                 }
-                "collectionDate" is a plain ISO-8601 date string or null (NOT a field object). "documentId" may be an empty string.
+                "collectionDate" is a plain ISO-8601 date string or null (NOT a field object). Always set "documentId" to "0" — the real id is stamped server-side.
                 SHAPE,
             'intake_form' => <<<'SHAPE'
                 Produce exactly this shape (each list holds one field object per item found):
                 {
-                  "documentId": "",
+                  "documentId": "0",
                   "chiefConcern": {"isPresent": true, "value": "Shortness of breath", "confidence": 0.95, "citation": {"source_type": "intake_form", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "chiefConcern", "quote_or_value": "Shortness of breath"}},
                   "currentMedications": [{"isPresent": true, "value": "Lisinopril 10mg daily", "confidence": 0.9, "citation": {"source_type": "intake_form", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "currentMedications[0]", "quote_or_value": "Lisinopril 10mg daily"}}],
                   "allergies": [],
                   "familyHistory": [],
                   "demographics": []
                 }
-                Every listed key is required. Use [] for a section with nothing to report; use a single field object (not a list) for "chiefConcern". "documentId" may be an empty string.
+                Every listed key is required. Use [] for a section with nothing to report; use a single field object (not a list) for "chiefConcern". Always set "documentId" to "0" — the real id is stamped server-side.
                 SHAPE,
             default => 'Produce a single JSON object of the document type\'s typed fields.',
         };
