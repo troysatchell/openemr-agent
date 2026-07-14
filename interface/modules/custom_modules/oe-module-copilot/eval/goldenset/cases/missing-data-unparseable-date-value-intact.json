@@ -1,5 +1,5 @@
 {
-    "id": "missing-data-collection-date-unparseable-null",
+    "id": "missing-data-unparseable-date-value-intact",
     "kind": "extraction",
     "category": "missing_data",
     "adjudicated": true,
@@ -8,12 +8,12 @@
         "no_phi_in_logs",
         "schema_valid"
     ],
-    "_guards_against": "A defensive-date regression inventing a collection date — an unparseable source date arrives as null and must persist as null (D0/D6), never as today, never as a guess.",
-    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review — same epistemic status as the Week 1 golden-chart labels.",
+    "_guards_against": "An unparseable source date blocking extraction or corrupting the analyte value in transit — the value and unit must persist verbatim with the date arriving as null on the wire (D0/D6 defensive parsing), never a whole-fail and never a mangled value.",
+    "_provenance": "Founder-adjudicated synthetic case, 2026-07-14 (Week 2 golden set, TRO-35); no clinician review. Re-frozen 2026-07-14: the persisted date column is deliberately UNPINNED (key omitted) because DerivedObservationWriter's chain-level current-time fallback for a missing collection date is a named D0/D6 gap recorded on the ticket — pinning null would freeze an expectation production cannot meet, and pinning the fallback would bless it.",
     "inputs": {
         "doc_type": "lab_pdf",
         "filename": "undated-panel.pdf",
-        "document_bytes": "%PDF-1.7 goldenset missing-data-collection-date-unparseable-null synthetic fixture bytes\n",
+        "document_bytes": "%PDF-1.7 goldenset missing-data-unparseable-date-value-intact synthetic fixture bytes\n",
         "vlm_wire": {
             "documentId": "999999",
             "analytes": [
@@ -78,8 +78,7 @@
             {
                 "test_name": "TSH",
                 "value": "2.1",
-                "unit": "mIU/L",
-                "collection_date": null
+                "unit": "mIU/L"
             }
         ]
     }

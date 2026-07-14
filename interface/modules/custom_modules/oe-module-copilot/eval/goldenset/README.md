@@ -102,7 +102,9 @@ back from the real tables.
   `expected.document_attached`: always true — failure leaves the document
   attached and retryable; `expected.lab_rows`: persisted derived rows in
   order, checked on the writer-contract columns only
-  (`test_name`, `value`, `unit`, `collection_date`);
+  (`test_name`, `value`, `unit`, `collection_date`) — a key PRESENT in a
+  row is checked, with `null` meaning a literal SQL NULL; an OMITTED key is
+  unconstrained;
   `expected.intake_candidates`: persisted candidates
   (`field_path`, `value`, `confidence`); `expected.absent_field_paths`: field
   paths that must NOT appear among persisted values;
