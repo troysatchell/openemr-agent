@@ -42,6 +42,7 @@ use OpenEMR\Modules\Copilot\Panel\SessionGate;
 use OpenEMR\Modules\Copilot\Panel\SnapshotEndpoint;
 use OpenEMR\Modules\Copilot\Panel\TodayScheduleEndpoint;
 use OpenEMR\Modules\Copilot\Routes\AclRequirement;
+use OpenEMR\Modules\Copilot\Routes\DocumentUploadEndpoint;
 use OpenEMR\Modules\Copilot\Routes\TurnEndpoint;
 use OpenEMR\Modules\Copilot\Snapshot\SnapshotComposer;
 use OpenEMR\Services\AppointmentService;
@@ -73,6 +74,14 @@ if (!is_array($decoded)) {
     http_response_code(400);
     echo json_encode(['error' => 'Invalid request.']);
     exit;
+}
+
+// Normalise decoded JSON to string keys once, for every endpoint's
+// array<string, mixed> input contract — same boundary discipline as the
+// Bootstrap route closures.
+$input = [];
+foreach ($decoded as $key => $value) {
+    $input[(string) $key] = $value;
 }
 
 $action = is_string($decoded['action'] ?? null) ? $decoded['action'] : null;
@@ -163,13 +172,23 @@ try {
                 $lastVisitResolver,
                 $clock,
             );
-            $result = $endpoint->handle($physician, $decoded);
+            $result = $endpoint->handle($physician, $input);
             break;
 
         case 'turn':
             $physician = $gate->authorize(new AclRequirement('patients', 'med'), $csrfToken);
             $endpoint = new TurnEndpoint(Bootstrap::buildTurnOrchestrator());
-            $result = $endpoint->handle($physician, $decoded);
+            $result = $endpoint->handle($physician, $input);
+            break;
+
+        case 'upload':
+            // Same delegation model as 'turn': the logged-in physician acts
+            // through the session gate; the endpoint and ingestion
+            // composition are the exact ones the guarded REST route uses —
+            // no new upload semantics live here (TRO-54 demo slice).
+            $physician = $gate->authorize(new AclRequirement('patients', 'med'), $csrfToken);
+            $endpoint = new DocumentUploadEndpoint(Bootstrap::buildDocumentIngestion());
+            $result = $endpoint->handle($physician, $input);
             break;
 
         default:

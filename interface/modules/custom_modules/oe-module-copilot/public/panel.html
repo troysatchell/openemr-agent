@@ -438,7 +438,8 @@ async function upload() {
     });
     const extractionStatus = result && result.extraction_status ? result.extraction_status : "unknown";
     const documentId = result && result.document_id ? result.document_id : "?";
-    status.replaceChildren(el("div", "banner quiet",
+    // extraction_failed is a failure state — never styled as success.
+    status.replaceChildren(el("div", extractionStatus === "extracted" ? "banner quiet" : "banner error",
       "Document #" + documentId + " — extraction_status: " + extractionStatus));
   } catch (e) {
     status.replaceChildren(el("div", "banner error", e.message || "Network error — the request did not complete."));
