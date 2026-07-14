@@ -80,6 +80,9 @@ class IntakeCandidateWriterTest extends TestCase
         );
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     private function nativeCounts(): array
     {
         return [
@@ -88,16 +91,17 @@ class IntakeCandidateWriterTest extends TestCase
         ];
     }
 
+    /**
+     * @return list<array<array-key, mixed>>
+     */
     private function activeCandidates(): array
     {
-        $rows = QueryUtils::fetchRecords(
+        return QueryUtils::fetchRecords(
             'SELECT field_group, value_text, field_path, page, confidence FROM '
             . IntakeCandidatesSchema::CANDIDATES_TABLE
             . ' WHERE patient_pid = ? AND superseded_at IS NULL ORDER BY id',
             [$this->pid],
         );
-
-        return is_array($rows) ? $rows : [];
     }
 
     public function testPersistStoresCitedCandidatesPerPresentEntry(): void
@@ -123,6 +127,7 @@ class IntakeCandidateWriterTest extends TestCase
         $this->assertIsArray($medRow);
         $this->assertSame('currentMedications[0]', $medRow['field_path']);
         $this->assertSame('1', $medRow['page']);
+        $this->assertIsNumeric($medRow['confidence']);
         $this->assertEqualsWithDelta(0.85, (float) $medRow['confidence'], 0.0001);
     }
 

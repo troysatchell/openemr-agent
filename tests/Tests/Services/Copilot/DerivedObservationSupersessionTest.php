@@ -129,11 +129,11 @@ class DerivedObservationSupersessionTest extends TestCase
             [$reportId, '2823-3', $analyte, '6.9', $unit, '3.5-5.1', '', 'interface feed', 'final', $date],
         );
 
-        return is_int($resultId) ? $resultId : (int) $resultId;
+        return $resultId;
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function snapshotResult(int $resultId): array
     {
@@ -144,7 +144,7 @@ class DerivedObservationSupersessionTest extends TestCase
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function lineageFor(int $resultId): array
     {
