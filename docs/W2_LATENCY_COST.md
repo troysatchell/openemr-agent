@@ -88,13 +88,15 @@ follow-up question, not a ceiling.
 
 ### Cohere (embed + rerank) — price-card model, unverified current rate
 
-The evidence-retriever path (`HybridRetriever` + `EvidenceRetrievalService`)
-is **not yet wired into the live `/api/copilot/turn` route** as of 2026-07-14
-— `Bootstrap::buildTurnOrchestrator()` composes the plain `TurnOrchestrator`,
-not the `SupervisedTurnDispatcher`/evidence-retriever graph; RAG is currently
-exercised only through the eval-gate harness (`GoldenSetRunner`) and its own
-DB-backed test suites. The price-card model below is therefore a **projection
-for when that wiring lands**, not a description of current production cost.
+**GAP CLOSED (Wave K.2, TRO-44, 2026-07-14):** the evidence-retriever path
+(`HybridRetriever` + `EvidenceRetrievalService`) is now wired into the live
+`/api/copilot/turn` route — an explicit `ask_evidence` request flag composes
+`Supervisor` + `SupervisedTurnDispatcher` + the real `EvidenceRetrieverWorkerImpl`
+on `CohereHttpTransport`, in addition to the eval-gate harness (`GoldenSetRunner`)
+and its own DB-backed test suites this path was previously exercised through
+alone. The price-card model below remains a **projection** — no live vendor
+call has been made in this environment (PS-2), so the unit costs are still
+reference figures, not measured spend.
 
 Unit-cost model: one embed call per question that triggers retrieval (the
 physician's free-text question, a handful of tokens) + one rerank call over

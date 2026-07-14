@@ -32,6 +32,7 @@ use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirGateway;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirServiceFactory;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
+use OpenEMR\Modules\Copilot\Eval\NoPendingDocumentsIntakeWorker;
 use OpenEMR\Modules\Copilot\Ingestion\DocumentIngestion;
 use OpenEMR\Modules\Copilot\Ingestion\DocumentIngestionService;
 use OpenEMR\Modules\Copilot\Ingestion\PatientDocumentAttacher;
@@ -40,6 +41,7 @@ use OpenEMR\Modules\Copilot\Llm\AnthropicLlmClient;
 use OpenEMR\Modules\Copilot\Llm\ChartDataFlattener;
 use OpenEMR\Modules\Copilot\Llm\CopilotTask;
 use OpenEMR\Modules\Copilot\Llm\DraftPolicies;
+use OpenEMR\Modules\Copilot\Llm\FieldAllowlist;
 use OpenEMR\Modules\Copilot\Llm\LlmClient;
 use OpenEMR\Modules\Copilot\Llm\LlmTurnRequest;
 use OpenEMR\Modules\Copilot\Llm\LlmTurnResponse;
@@ -47,8 +49,20 @@ use OpenEMR\Modules\Copilot\Llm\LlmUnavailableException;
 use OpenEMR\Modules\Copilot\Llm\MinimumNecessaryPayloadBuilder;
 use OpenEMR\Modules\Copilot\Observability\JsonlTraceRecorder;
 use OpenEMR\Modules\Copilot\Observability\ReadinessCheck;
+use OpenEMR\Modules\Copilot\Observability\TraceContext;
 use OpenEMR\Modules\Copilot\Orchestration\ReadThroughChartSnapshotProvider;
+use OpenEMR\Modules\Copilot\Orchestration\SupervisedTurnDispatcher;
+use OpenEMR\Modules\Copilot\Orchestration\Supervisor;
+use OpenEMR\Modules\Copilot\Orchestration\SupervisorTurnState;
 use OpenEMR\Modules\Copilot\Orchestration\TurnOrchestrator;
+use OpenEMR\Modules\Copilot\Rag\CohereEmbedClient;
+use OpenEMR\Modules\Copilot\Rag\CohereHttpTransport;
+use OpenEMR\Modules\Copilot\Rag\CohereRerankClient;
+use OpenEMR\Modules\Copilot\Rag\CorpusIndexSchema;
+use OpenEMR\Modules\Copilot\Rag\EvidenceRetrievalService;
+use OpenEMR\Modules\Copilot\Rag\EvidenceRetrieverWorkerImpl;
+use OpenEMR\Modules\Copilot\Rag\HybridRetriever;
+use OpenEMR\Modules\Copilot\Rag\RetrievalOutcome;
 use OpenEMR\Modules\Copilot\Routes\AclRequirement;
 use OpenEMR\Modules\Copilot\Routes\DocumentUploadEndpoint;
 use OpenEMR\Modules\Copilot\Routes\GuardedRouteRegistrar;
@@ -62,6 +76,26 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 class Bootstrap
 {
+    /**
+     * Cohere embed model id for the live evidence-retriever composition
+     * (Wave K.2, TRO-44) — same default `bin/index-corpus.php` uses for
+     * production corpus indexing (`COHERE_EMBED_MODEL` env override), so a
+     * query embeds against the same model family the corpus was built with.
+     */
+    private const DEFAULT_COHERE_EMBED_MODEL = 'embed-english-v3.0';
+
+    /**
+     * Cohere rerank model id for the live evidence-retriever composition
+     * (Wave K.2, TRO-44). UNVERIFIED against Cohere's current model catalog
+     * in this environment (no live network access here) — overridable via
+     * `COHERE_RERANK_MODEL`; confirm the current model id before relying on
+     * this default in a real deployment.
+     */
+    private const DEFAULT_COHERE_RERANK_MODEL = 'rerank-english-v3.0';
+
+    /** The evidence-retriever's requested chunk count for the live turn route. */
+    private const EVIDENCE_TOP_K = 5;
+
     public function __construct(private readonly EventDispatcherInterface $eventDispatcher)
     {
     }
@@ -189,7 +223,7 @@ class Bootstrap
                 }
 
                 try {
-                    $endpoint = new TurnEndpoint(self::buildTurnOrchestrator());
+                    $physician = new PhysicianContext($username, $userId);
 
                     // Normalise decoded JSON to string keys at this boundary so
                     // the endpoint receives array<string, mixed> (a JSON object's
@@ -199,7 +233,18 @@ class Bootstrap
                         $input[(string) $key] = $value;
                     }
 
-                    return $endpoint->handle(new PhysicianContext($username, $userId), $input);
+                    // Wave K.2 (TRO-44; UC7): an explicit clinician toggle —
+                    // never an invented NLP classification of the question —
+                    // read here in the route so TurnEndpoint's own contract
+                    // stays additive-only (the flag never enters its wire
+                    // shape; only the resolved RetrievalOutcome does).
+                    $askEvidenceRaw = $input['ask_evidence'] ?? false;
+                    $askEvidence = is_bool($askEvidenceRaw) && $askEvidenceRaw;
+                    $evidence = $askEvidence ? self::resolveLiveEvidence($physician, $input) : null;
+
+                    $endpoint = new TurnEndpoint(self::buildTurnOrchestrator());
+
+                    return $endpoint->handle($physician, $input, $evidence);
                 } catch (\DomainException) {
                     // Generic by design — never echo internals (R11).
                     http_response_code(400);
@@ -353,25 +398,33 @@ class Bootstrap
      */
     public static function buildChartSnapshotProvider(): ReadThroughChartSnapshotProvider
     {
-        $pidResolver = static function (string $patientUuid): int {
-            $records = QueryUtils::fetchRecords(
-                'SELECT `pid` FROM `patient_data` WHERE `uuid` = ?',
-                [UuidRegistry::uuidToBytes($patientUuid)],
-            );
-            $pid = $records[0]['pid'] ?? null;
-            if (!is_int($pid) && !(is_string($pid) && ctype_digit($pid))) {
-                throw new \DomainException('Unknown patient uuid — no pid mapping in the uuid registry.');
-            }
-
-            return (int) $pid;
-        };
-
         return new ReadThroughChartSnapshotProvider(
             new ChartReader(new OpenEmrFhirGateway(new OpenEmrFhirServiceFactory())),
             new FhirChartMapper(),
             new ChartSnapshotSynthesizer(),
-            $pidResolver,
+            self::resolvePatientPid(...),
         );
+    }
+
+    /**
+     * Resolves a caller-supplied patient uuid to the trusted `pid` (D7: pid
+     * is the trusted surrogate key; FHIR/uuid content is never the pid
+     * source). Shared by the chart-snapshot provider above and the live
+     * evidence composition below (Wave K.2, TRO-44) — one uuid→pid resolver,
+     * not two copies drifting independently.
+     */
+    private static function resolvePatientPid(string $patientUuid): int
+    {
+        $records = QueryUtils::fetchRecords(
+            'SELECT `pid` FROM `patient_data` WHERE `uuid` = ?',
+            [UuidRegistry::uuidToBytes($patientUuid)],
+        );
+        $pid = $records[0]['pid'] ?? null;
+        if (!is_int($pid) && !(is_string($pid) && ctype_digit($pid))) {
+            throw new \DomainException('Unknown patient uuid — no pid mapping in the uuid registry.');
+        }
+
+        return (int) $pid;
     }
 
     /**
@@ -407,7 +460,7 @@ class Bootstrap
             self::buildChartSnapshotProvider(),
             CriticalSubsetDetectors::withDraftTables(),
             new ChartDataFlattener(),
-            new MinimumNecessaryPayloadBuilder(DraftPolicies::v1()),
+            new MinimumNecessaryPayloadBuilder(self::buildTurnOrchestratorPolicies()),
             CopilotTask::FollowUpQa,
             EventAuditDisclosureLogger::forEventAuditLogger(),
             $llm,
@@ -415,6 +468,120 @@ class Bootstrap
             $clock,
             new JsonlTraceRecorder(self::defaultTracePath()),
         );
+    }
+
+    /**
+     * The live turn route's per-task field allowlists (Wave K.2, TRO-44;
+     * W2_ARCHITECTURE.md §4/§6; PS-14).
+     *
+     * `DraftPolicies::v1()` itself is left untouched — it is the shared,
+     * founder-owned DRAFT governance artifact (see its own class docblock:
+     * "changing a field list here is a clinical-governance decision, not an
+     * engineering one — escalate, don't edit"), and `DraftPoliciesRefFieldTest`
+     * pins its exact shape for every task. This composition root instead
+     * widens ONLY the copy used for the live FollowUpQa turn — the task the
+     * `/api/copilot/turn` route actually runs — adding the `guideline_evidence`
+     * data class (`chunk`, `source`, `heading`, `snippet`, `ref`) that
+     * `TurnOrchestrator::withGuidelineEvidence()` folds a supplied
+     * `RetrievalOutcome`'s chunks into. Without this, evidence entering the
+     * flattened chart data would never survive `MinimumNecessaryPayloadBuilder`
+     * (it only reads data classes the task's own policy names), so the model
+     * would never see it — this is what makes the live evidence seam actually
+     * reach the LLM, not merely compose a `RetrievalOutcome` nobody reads.
+     *
+     * Snapshot and PreChart are the zero-RAG-on-snapshot paths (§5) and are
+     * never supplied evidence, so their allowlists are left exactly as
+     * `DraftPolicies::v1()` returns them.
+     *
+     * @return array<string, FieldAllowlist> CopilotTask backing value => allowlist
+     */
+    private static function buildTurnOrchestratorPolicies(): array
+    {
+        $policies = DraftPolicies::v1();
+
+        $followUpFields = $policies[CopilotTask::FollowUpQa->value]->fieldsByDataClass();
+        $followUpFields['guideline_evidence'] = ['chunk', 'source', 'heading', 'snippet', 'ref'];
+        $policies[CopilotTask::FollowUpQa->value] = new FieldAllowlist($followUpFields);
+
+        return $policies;
+    }
+
+    /**
+     * Resolves this turn's guideline evidence for the live route (Wave K.2,
+     * TRO-44) through the REAL supervised dispatch — `Supervisor` +
+     * `SupervisedTurnDispatcher` + the real `EvidenceRetrieverWorkerImpl`
+     * (worker stubs never leave orchestration unit tests, §6), embed/rerank
+     * on `CohereHttpTransport`, keyed from `COHERE_API_KEY`. A missing key
+     * composes the degraded pair per PS-12 inside `EvidenceRetrievalService`
+     * itself rather than failing here.
+     *
+     * The supervised state is fixed to "evidence requested, nothing else in
+     * play" (`isSnapshotTurn`/`hasPendingUnextractedDocument`/
+     * `criticalFindingPresent`/`physicianEngagedCriticalFinding` all false;
+     * `questionAsksForEvidence` true) — this composition answers only "the
+     * physician explicitly asked for guideline evidence this turn" (UC7); it
+     * does not attempt pending-document intake on the turn path (a TRO-32
+     * residual, out of this ticket's scope), so the intake worker passed to
+     * the dispatcher is never actually invoked given this fixed state.
+     *
+     * Malformed/missing patient_uuid or question returns null immediately —
+     * this method never decides the request's fate; `TurnEndpoint` refuses
+     * those independently regardless of what evidence (if any) is supplied.
+     *
+     * A dispatch failure degrades the TURN, not just retrieval: anything
+     * other than `\Error`/`\ErrorException` (which propagate, per this
+     * repo's forbidden-catch-type convention) returns null — evidence-less is
+     * an honest fallback, never a route error (the physician still gets
+     * findings and a chart-grounded answer, only without this turn's
+     * guideline citations).
+     *
+     * @param array<string, mixed> $input
+     */
+    private static function resolveLiveEvidence(PhysicianContext $physician, array $input): ?RetrievalOutcome
+    {
+        $patientUuid = $input['patient_uuid'] ?? null;
+        $question = $input['question'] ?? null;
+        if (!is_string($patientUuid) || trim($patientUuid) === '' || !is_string($question) || trim($question) === '') {
+            return null;
+        }
+
+        try {
+            // Cheap and idempotent (CREATE TABLE IF NOT EXISTS); population
+            // rides the committed `bin/index-corpus.php` deployment step, not
+            // this request path.
+            CorpusIndexSchema::ensureInstalled();
+
+            $patientPid = self::resolvePatientPid($patientUuid);
+
+            $embedModel = getenv('COHERE_EMBED_MODEL') ?: self::DEFAULT_COHERE_EMBED_MODEL;
+            $rerankModel = getenv('COHERE_RERANK_MODEL') ?: self::DEFAULT_COHERE_RERANK_MODEL;
+
+            $embedder = new CohereEmbedClient(CohereHttpTransport::forEmbed(), $embedModel);
+            $reranker = new CohereRerankClient(CohereHttpTransport::forRerank(), $rerankModel);
+            $evidenceWorker = new EvidenceRetrieverWorkerImpl(
+                new EvidenceRetrievalService($embedder, new HybridRetriever($reranker)),
+            );
+
+            $dispatcher = new SupervisedTurnDispatcher(
+                new Supervisor(),
+                new NoPendingDocumentsIntakeWorker(),
+                $evidenceWorker,
+                new JsonlTraceRecorder(self::defaultTracePath()),
+            );
+
+            $state = new SupervisorTurnState(false, false, true, false, false);
+            $turnSpan = TraceContext::start('turn', new \DateTimeImmutable());
+
+            $result = $dispatcher->dispatch($physician, $state, $patientPid, $question, self::EVIDENCE_TOP_K, $turnSpan);
+
+            return $result->evidence;
+        } catch (\Throwable $e) {
+            if (!($e instanceof \Error) && !($e instanceof \ErrorException)) {
+                return null;
+            }
+
+            throw $e;
+        }
     }
 
     /**
