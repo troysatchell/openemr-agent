@@ -1,0 +1,51 @@
+# TRO-39 — committed synthetic regression fixture (PS-3; W2_ARCHITECTURE.md §7
+# R-W5, the grading acceptance test).
+#
+# What this breaks: ClaimVerifier::isGrounded() in
+# interface/modules/custom_modules/oe-module-copilot/src/Verification/ClaimVerifier.php
+# is collapsed to `return true;` unconditionally, deleting the no-grounding-
+# by-proxy check the method's own docblock documents (W2_ARCHITECTURE.md §4;
+# docs/W2_PRD_SEEDS.md PS-6): a resolved SourceRef of source_type
+# `derived_observation` is a pointer, never evidence, and must resolve
+# through the injected DerivedObservationGrounding port to the source
+# document it points back to before a claim citing it can ground. Under this
+# regression every derived-observation citation grounds trivially — port
+# present or absent, source document present or gone, it no longer matters.
+# A physician-facing claim can now cite a derived lab observation whose
+# source PDF has since been deleted or superseded and still render as fully
+# grounded: exactly the "citation chain terminates at a pointer instead of
+# the evidence" failure PS-6 exists to forbid.
+#
+# Why this file: this is a one-line deletion of a fail-closed security
+# invariant inside production verification logic, indistinguishable from a
+# well-intentioned "simplify this branch" refactor to a type checker or a
+# reviewer skimming a diff — the method still type-checks as `bool` and
+# still compiles under PHPStan L10. It is only catchable by a case that
+# actually exercises a derived-observation citation whose source document is
+# gone. Three committed golden cases exercise exactly this:
+# refusal-no-grounding-by-proxy.json (source gone => must reject),
+# refusal-verifier-without-port-fails-closed.json (no port wired => must
+# reject by construction), and the control arm
+# refusal-derived-source-present-grounds.json (source present => must
+# ground, proving the regression isn't merely "fail everything"). Under this
+# regression the first two flip from rejected to wrongly-grounded, failing
+# their citation_present and safe_refusal rubrics and proving the gate is
+# not gate theater (a regression that has never been seen to fail the gate
+# is indistinguishable from no gate at all).
+diff --git a/interface/modules/custom_modules/oe-module-copilot/src/Verification/ClaimVerifier.php b/interface/modules/custom_modules/oe-module-copilot/src/Verification/ClaimVerifier.php
+index 0dc557a..b6c4541 100644
+--- a/interface/modules/custom_modules/oe-module-copilot/src/Verification/ClaimVerifier.php
++++ b/interface/modules/custom_modules/oe-module-copilot/src/Verification/ClaimVerifier.php
+@@ -126,11 +126,6 @@ final class ClaimVerifier
+      */
+     private function isGrounded(SourceRef $source): bool
+     {
+-        if ($source->sourceType !== self::DERIVED_OBSERVATION_SOURCE_TYPE) {
+-            return true;
+-        }
+-
+-        return $this->derivedGrounding !== null
+-            && $this->derivedGrounding->sourceDocumentExists($source->sourceId);
++        return true;
+     }
+ }
