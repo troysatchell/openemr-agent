@@ -23,6 +23,7 @@
 
 declare(strict_types=1);
 
+use OpenEMR\Core\OEGlobalsBag;
 use OpenEMR\Modules\Copilot\Rag\CohereEmbedClient;
 use OpenEMR\Modules\Copilot\Rag\CorpusIndexer;
 
@@ -56,6 +57,27 @@ if ($apiKey === false || trim($apiKey) === '') {
     fwrite(STDERR, "This vendor boundary has no service-account or default-key fallback.\n");
     exit(1);
 }
+
+// Minimal, explicit DB-connection config resolution — NOT interface/globals.php
+// (CLAUDE.md danger zone): no session, no auth, no $ignoreAuth. QueryUtils'
+// ADODB layer resolves its connection from OE_SITE_DIR alone; without this
+// block the indexer's first write dies before reaching the vendor at all
+// (gap found 2026-07-14 — the same bootstrap the eval regeneration command
+// carries; mirrored here rather than shared because bin scripts are
+// deliberately self-contained).
+$siteDir = getenv('OE_SITE_DIR');
+if ($siteDir === false || trim($siteDir) === '') {
+    $siteDir = dirname(__DIR__, 5) . '/sites/default';
+}
+OEGlobalsBag::getInstance()->set('OE_SITE_DIR', $siteDir);
+if (is_file($siteDir . '/config.php')) {
+    require_once $siteDir . '/config.php';
+}
+
+// Warm up the ADODB connection BEFORE any stdout output: legacy sql.inc.php
+// starts a PHP session on its first require, and PHP refuses session_start()
+// once output has been sent — even under the CLI SAPI.
+\OpenEMR\Common\Database\QueryUtils::fetchSingleValue('SELECT 1 AS one', 'one', []);
 
 $modelId = getenv('COHERE_EMBED_MODEL');
 if ($modelId === false || trim($modelId) === '') {
