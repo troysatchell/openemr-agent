@@ -58,7 +58,7 @@ body = json.dumps({
            "user/MedicationRequest.read user/AllergyIntolerance.read "
            "user/appointment.write user/facility.read user/user.read "
            "user/encounter.read user/encounter.write "
-           "user/ping.read user/health.read user/ready.read user/turn.write"})
+           "user/ping.read user/health.read user/ready.read user/turn.write user/document.write user/source.write"})
 r = subprocess.run(['curl','-s','-X','POST',f'{base}/oauth2/default/registration',
     '-H','Content-Type: application/json','-d',body], capture_output=True, text=True)
 d = json.loads(r.stdout)
@@ -86,7 +86,7 @@ body = urllib.parse.urlencode({
            'user/Patient.read user/MedicationRequest.read user/AllergyIntolerance.read '
            'user/appointment.write user/facility.read user/user.read '
            'user/encounter.read user/encounter.write '
-           'user/health.read user/ready.read user/turn.write')})
+           'user/health.read user/ready.read user/turn.write user/document.write user/source.write')})
 r = subprocess.run(['curl','-s','-X','POST',f'{base}/oauth2/default/token',
     '-H','Content-Type: application/x-www-form-urlencoded','-d',body],
     capture_output=True, text=True)

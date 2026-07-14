@@ -223,12 +223,34 @@ final class VlmExtractionParser
     private static function decodeMap(string $json, string $fieldPath): array
     {
         try {
-            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            $decoded = json_decode(self::unwrapJsonObject($json), true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             throw new ExtractionParseException(sprintf('"%s" is not valid JSON', $fieldPath), 0, $e);
         }
 
         return self::requireMap($decoded, $fieldPath);
+    }
+
+    /**
+     * Returns the outermost JSON object substring (first `{` to last `}`).
+     *
+     * The recorded fixtures were always pristine JSON, but a LIVE model
+     * commonly wraps its object in a ```json code fence or a sentence of
+     * preamble/postamble. Slicing to the outermost braces tolerates that
+     * wrapper without loosening the strict key/shape validation that follows
+     * — schema containment (PS-7) is unchanged; only the envelope is peeled.
+     * A string with no braces is returned unchanged so json_decode still
+     * produces the original, honest parse error.
+     */
+    private static function unwrapJsonObject(string $raw): string
+    {
+        $start = strpos($raw, '{');
+        $end = strrpos($raw, '}');
+        if ($start === false || $end === false || $end < $start) {
+            return $raw;
+        }
+
+        return substr($raw, $start, $end - $start + 1);
     }
 
     /**
