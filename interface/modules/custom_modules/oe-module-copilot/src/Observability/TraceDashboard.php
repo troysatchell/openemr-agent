@@ -12,6 +12,14 @@
  * trustworthy as the trace it summarizes. Malformed lines are counted, not
  * silently dropped; unmeasurable metrics are named N/A with a reason.
  *
+ * Week 2 (TRO-45/TRO-46): also summarizes the `document-ingestion` step
+ * family (count, p95 latency, failure rate) and the supervisor's
+ * `handoff.<route>` decisions (per-route counts), and rolls cost up per
+ * vendor and per correlation id from BOTH trace-carried cost sources —
+ * token-usage cost (`anthropic`) and non-token vendor cost
+ * ({@see VendorUnits}, its own vendor name) — so cost is derivable from the
+ * trace alone.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -51,6 +59,17 @@ final readonly class TraceDashboard
         $turnHasFailure = [];
         /** @var array<string, bool> $turnDegraded */
         $turnDegraded = [];
+
+        $ingestionCount = 0;
+        $ingestionFailureCount = 0;
+        /** @var list<float> $ingestionDurations */
+        $ingestionDurations = [];
+        /** @var array<string, int> $routeCounts */
+        $routeCounts = [];
+        /** @var array<string, float> $vendorCostUsd */
+        $vendorCostUsd = [];
+        /** @var array<string, float> $costUsdByCorrelation */
+        $costUsdByCorrelation = [];
 
         foreach (explode("\n", $jsonl) as $line) {
             if (trim($line) === '') {
@@ -103,6 +122,34 @@ final readonly class TraceDashboard
             $cost = $decoded['cost_usd'] ?? null;
             if (is_int($cost) || is_float($cost)) {
                 $costUsd += (float) $cost;
+
+                $vendorCostUsd['anthropic'] = ($vendorCostUsd['anthropic'] ?? 0.0) + (float) $cost;
+                $costUsdByCorrelation[$correlationId] = ($costUsdByCorrelation[$correlationId] ?? 0.0) + (float) $cost;
+            }
+
+            if ($step === 'document-ingestion') {
+                $ingestionCount++;
+                if ($failed) {
+                    $ingestionFailureCount++;
+                }
+                if (is_int($duration) || is_float($duration)) {
+                    $ingestionDurations[] = (float) $duration;
+                }
+            }
+
+            if (str_starts_with($step, 'handoff.')) {
+                $route = substr($step, strlen('handoff.'));
+                $routeCounts[$route] = ($routeCounts[$route] ?? 0) + 1;
+            }
+
+            $vendorUnits = $decoded['vendor_units'] ?? null;
+            if (is_array($vendorUnits)) {
+                $vendor = $vendorUnits['vendor'] ?? null;
+                $vendorUnitsCost = $vendorUnits['cost_usd'] ?? null;
+                if (is_string($vendor) && (is_int($vendorUnitsCost) || is_float($vendorUnitsCost))) {
+                    $vendorCostUsd[$vendor] = ($vendorCostUsd[$vendor] ?? 0.0) + (float) $vendorUnitsCost;
+                    $costUsdByCorrelation[$correlationId] = ($costUsdByCorrelation[$correlationId] ?? 0.0) + (float) $vendorUnitsCost;
+                }
             }
         }
 
@@ -110,6 +157,8 @@ final readonly class TraceDashboard
         $errorTurnCount = count($turnHasFailure);
         $sums = array_values($turnDurations);
         sort($sums);
+
+        sort($ingestionDurations);
 
         return new DashboardReport(
             turnCount: $turnCount,
@@ -127,6 +176,12 @@ final readonly class TraceDashboard
             costUsdTotal: $costUsd,
             malformedLineCount: $malformed,
             notApplicable: self::NOT_APPLICABLE,
+            ingestionCount: $ingestionCount,
+            ingestionLatencyP95Ms: self::nearestRank($ingestionDurations, 95),
+            ingestionFailureRate: $ingestionCount > 0 ? $ingestionFailureCount / $ingestionCount : null,
+            routeCounts: $routeCounts,
+            vendorCostUsd: $vendorCostUsd,
+            costUsdByCorrelation: $costUsdByCorrelation,
         );
     }
 

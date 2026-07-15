@@ -564,8 +564,12 @@ class Bootstrap
             $embedModel = getenv('COHERE_EMBED_MODEL') ?: self::DEFAULT_COHERE_EMBED_MODEL;
             $rerankModel = getenv('COHERE_RERANK_MODEL') ?: self::DEFAULT_COHERE_RERANK_MODEL;
 
-            $embedder = new CohereEmbedClient(CohereHttpTransport::forEmbed(), $embedModel);
-            $reranker = new CohereRerankClient(CohereHttpTransport::forRerank(), $rerankModel);
+            // The recorder makes embed/rerank vendor units land in the same
+            // JSONL trace the turn writes, so per-vendor cost stays derivable
+            // from traces alone (TRO-46).
+            $vendorTraceRecorder = new JsonlTraceRecorder(self::defaultTracePath());
+            $embedder = new CohereEmbedClient(CohereHttpTransport::forEmbed(), $embedModel, $vendorTraceRecorder);
+            $reranker = new CohereRerankClient(CohereHttpTransport::forRerank(), $rerankModel, $vendorTraceRecorder);
             // The question text crossing to the embed/rerank vendor is a
             // disclosed crossing like every other vendor crossing (C1/C5) —
             // logged before the call, per DisclosedEvidenceRetrieverWorker.

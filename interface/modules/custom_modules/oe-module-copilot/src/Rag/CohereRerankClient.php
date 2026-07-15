@@ -27,6 +27,18 @@
  * internals in user-facing output) — the original throwable, if any, rides
  * on getPrevious() only.
  *
+ * Cost capture (TRO-46; PS-9): an optional trailing `TraceContext $span`
+ * argument on `rerank()` and an optional trailing `TraceRecorder`
+ * constructor argument (both additive — every pre-existing call site keeps
+ * working unchanged and records nothing) let this vendor boundary record a
+ * `rerank` `StepRecord` carrying a {@see VendorUnits} at the committed
+ * `cohere-2026-07` price: $2.00 / 1,000 search units (`docs/COST_MODEL.md`
+ * §1). One search unit is one query reranked against up to
+ * `DOCUMENTS_PER_SEARCH_UNIT` documents; `HybridRetriever`'s candidate cap
+ * keeps every live call inside one search unit today, but the unit count is
+ * still computed from the actual document count rather than hardcoded to 1,
+ * so a future larger candidate set is still billed honestly.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -38,8 +50,30 @@ declare(strict_types=1);
 
 namespace OpenEMR\Modules\Copilot\Rag;
 
+use OpenEMR\Modules\Copilot\Observability\NullTraceRecorder;
+use OpenEMR\Modules\Copilot\Observability\StepOutcome;
+use OpenEMR\Modules\Copilot\Observability\StepRecord;
+use OpenEMR\Modules\Copilot\Observability\TraceContext;
+use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
+use OpenEMR\Modules\Copilot\Observability\VendorUnits;
+
 final readonly class CohereRerankClient
 {
+    private const PRICE_VERSION = 'cohere-2026-07';
+
+    /** Committed Cohere Rerank v2 price (docs/COST_MODEL.md §1) — MEASURED: $2.00 / 1,000 search units. */
+    private const USD_PER_SEARCH_UNIT = 0.002;
+
+    /** A search unit covers a query reranked against up to this many documents — MEASURED vendor billing unit. */
+    private const DOCUMENTS_PER_SEARCH_UNIT = 100;
+
+    /**
+     * Not promoted: an optional TraceRecorder is accepted as a nullable
+     * constructor parameter and resolved into this property in the body
+     * (same pattern as CohereEmbedClient/TurnOrchestrator).
+     */
+    private TraceRecorder $recorder;
+
     /**
      * @param \Closure(array<string, mixed>): array{int, array<string, mixed>} $transport
      *        Sends the JSON-serializable Cohere Rerank v2 request body and
@@ -49,10 +83,13 @@ final readonly class CohereRerankClient
     public function __construct(
         private \Closure $transport,
         private string $modelId,
+        ?TraceRecorder $recorder = null,
     ) {
         if (trim($this->modelId) === '') {
             throw new \DomainException('CohereRerankClient modelId must be non-blank');
         }
+
+        $this->recorder = $recorder ?? new NullTraceRecorder();
     }
 
     /**
@@ -64,7 +101,7 @@ final readonly class CohereRerankClient
      * @return list<array{index: int, score: float}> ordered highest score first;
      *         `index` indexes back into the `$documents` argument as given
      */
-    public function rerank(string $query, array $documents, int $topN): array
+    public function rerank(string $query, array $documents, int $topN, ?TraceContext $span = null): array
     {
         $requestBody = [
             'model' => $this->modelId,
@@ -73,9 +110,14 @@ final readonly class CohereRerankClient
             'top_n' => $topN,
         ];
 
+        $startedAt = new \DateTimeImmutable();
+        $start = microtime(true);
+
         try {
             [$status, $body] = ($this->transport)($requestBody);
         } catch (\Throwable $e) {
+            $this->recordFailure($span, $startedAt, $start, RerankUnavailableException::class);
+
             throw new RerankUnavailableException(
                 'The rerank endpoint could not be reached',
                 0,
@@ -84,12 +126,24 @@ final readonly class CohereRerankClient
         }
 
         if ($status !== 200) {
+            $this->recordFailure($span, $startedAt, $start, RerankUnavailableException::class);
+
             throw new RerankUnavailableException(
                 sprintf('The rerank endpoint returned HTTP %d', $status),
             );
         }
 
-        return $this->parseResults($body, count($documents));
+        try {
+            $parsed = $this->parseResults($body, count($documents));
+        } catch (RerankUnavailableException $e) {
+            $this->recordFailure($span, $startedAt, $start, $e::class);
+
+            throw $e;
+        }
+
+        $this->recordSuccess($span, $startedAt, $start, count($documents));
+
+        return $parsed;
     }
 
     /**
@@ -140,5 +194,50 @@ final readonly class CohereRerankClient
         usort($parsed, static fn (array $a, array $b): int => $b['score'] <=> $a['score']);
 
         return $parsed;
+    }
+
+    /**
+     * Records the `rerank` step's cost when a span is supplied — a no-op
+     * when it is not, so every call site that predates TRO-46 stays
+     * behaviorally unchanged.
+     */
+    private function recordSuccess(?TraceContext $span, \DateTimeImmutable $startedAt, float $start, int $documentCount): void
+    {
+        if ($span === null) {
+            return;
+        }
+
+        $searchUnits = max(1, (int) ceil($documentCount / self::DOCUMENTS_PER_SEARCH_UNIT));
+        $costUsd = $searchUnits * self::USD_PER_SEARCH_UNIT;
+
+        $this->recorder->record($span, new StepRecord(
+            'rerank',
+            $startedAt,
+            $this->elapsedMs($start),
+            StepOutcome::Ok,
+            vendorUnits: new VendorUnits('cohere', 'rerank_search_unit', $searchUnits, self::PRICE_VERSION, $costUsd),
+        ));
+    }
+
+    private function recordFailure(?TraceContext $span, \DateTimeImmutable $startedAt, float $start, string $errorClass): void
+    {
+        if ($span === null) {
+            return;
+        }
+
+        $this->recorder->record(
+            $span,
+            new StepRecord('rerank', $startedAt, $this->elapsedMs($start), StepOutcome::Failed, $errorClass),
+        );
+    }
+
+    /**
+     * Elapsed milliseconds since $startSeconds (microtime(true)) — a
+     * measurement, not domain time (same convention as
+     * SupervisedTurnDispatcher's trace timing).
+     */
+    private function elapsedMs(float $startSeconds): float
+    {
+        return (microtime(true) - $startSeconds) * 1000.0;
     }
 }

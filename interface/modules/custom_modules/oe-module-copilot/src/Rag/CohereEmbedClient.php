@@ -24,6 +24,20 @@
  * thrown message; the original throwable, if any, rides on getPrevious()
  * only.
  *
+ * Cost capture (TRO-46; PS-9): an optional trailing `TraceContext $span`
+ * argument on `embed()` and an optional trailing `TraceRecorder` constructor
+ * argument (both additive — every pre-existing call site, in tests and in
+ * `CorpusIndexer`, keeps working unchanged and records nothing) let this
+ * vendor boundary record an `embed` `StepRecord` carrying a
+ * {@see VendorUnits} at the committed `cohere-2026-07` price
+ * (`$0.10 / 1,000,000 tokens`, `docs/COST_MODEL.md` §1). The Cohere embed v2
+ * response never returns a token count, so the unit count fed to that price
+ * is itself an ESTIMATE — ~4 characters/token over the input text, a
+ * conservative upper bound (real tokenization is usually denser, so this
+ * over-counts rather than under-counts) — labeled `embed_token_estimated`,
+ * never presented as a vendor-measured figure. No recording happens (and no
+ * span/recorder need be supplied) on the build-time indexing path.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -35,8 +49,35 @@ declare(strict_types=1);
 
 namespace OpenEMR\Modules\Copilot\Rag;
 
+use OpenEMR\Modules\Copilot\Observability\NullTraceRecorder;
+use OpenEMR\Modules\Copilot\Observability\StepOutcome;
+use OpenEMR\Modules\Copilot\Observability\StepRecord;
+use OpenEMR\Modules\Copilot\Observability\TraceContext;
+use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
+use OpenEMR\Modules\Copilot\Observability\VendorUnits;
+
 final readonly class CohereEmbedClient
 {
+    private const PRICE_VERSION = 'cohere-2026-07';
+
+    /** Committed Cohere embed v2 price (docs/COST_MODEL.md §1) — MEASURED. */
+    private const USD_PER_MILLION_TOKENS = 0.10;
+
+    /**
+     * The Cohere embed v2 response carries no token count, so cost is
+     * estimated from input character length. ~4 chars/token is a
+     * conservative, ASSUMED, upper-bound heuristic — see the class docblock.
+     */
+    private const ESTIMATED_CHARS_PER_TOKEN = 4;
+
+    /**
+     * Not promoted: an optional TraceRecorder is accepted as a nullable
+     * constructor parameter and resolved into this property in the body
+     * (same pattern as TurnOrchestrator's traceRecorder — PHP forbids `new`
+     * in a promoted property's default value).
+     */
+    private TraceRecorder $recorder;
+
     /**
      * @param \Closure(array<string, mixed>): array{int, array<string, mixed>} $transport
      *        Sends the JSON-serializable Cohere embed v2 request body and
@@ -48,10 +89,13 @@ final readonly class CohereEmbedClient
     public function __construct(
         private \Closure $transport,
         public string $modelId,
+        ?TraceRecorder $recorder = null,
     ) {
         if (trim($this->modelId) === '') {
             throw new \DomainException('CohereEmbedClient modelId must be non-blank');
         }
+
+        $this->recorder = $recorder ?? new NullTraceRecorder();
     }
 
     /**
@@ -64,7 +108,7 @@ final readonly class CohereEmbedClient
      *         endpoint returns a non-200 status, or the response body does
      *         not carry exactly one float vector per input text.
      */
-    public function embed(array $texts, string $inputType = 'search_document'): array
+    public function embed(array $texts, string $inputType = 'search_document', ?TraceContext $span = null): array
     {
         if (!in_array($inputType, ['search_document', 'search_query'], true)) {
             throw new \DomainException('CohereEmbedClient inputType must be search_document or search_query');
@@ -77,9 +121,14 @@ final readonly class CohereEmbedClient
             'embedding_types' => ['float'],
         ];
 
+        $startedAt = new \DateTimeImmutable();
+        $start = microtime(true);
+
         try {
             [$status, $body] = ($this->transport)($requestBody);
         } catch (\Throwable $e) {
+            $this->recordFailure($span, $startedAt, $start, EmbeddingUnavailableException::class);
+
             throw new EmbeddingUnavailableException(
                 'The Cohere embed endpoint could not be reached',
                 0,
@@ -88,12 +137,24 @@ final readonly class CohereEmbedClient
         }
 
         if ($status !== 200) {
+            $this->recordFailure($span, $startedAt, $start, EmbeddingUnavailableException::class);
+
             throw new EmbeddingUnavailableException(
                 sprintf('The Cohere embed endpoint returned HTTP %d', $status),
             );
         }
 
-        return $this->parseVectors($body, count($texts));
+        try {
+            $vectors = $this->parseVectors($body, count($texts));
+        } catch (EmbeddingUnavailableException $e) {
+            $this->recordFailure($span, $startedAt, $start, $e::class);
+
+            throw $e;
+        }
+
+        $this->recordSuccess($span, $startedAt, $start, $texts);
+
+        return $vectors;
     }
 
     /**
@@ -152,5 +213,56 @@ final readonly class CohereEmbedClient
         }
 
         return $floats;
+    }
+
+    /**
+     * Records the `embed` step's cost when a span is supplied — a no-op
+     * (including for the estimate math) when it is not, so every call site
+     * that predates TRO-46 stays behaviorally unchanged.
+     *
+     * @param list<string> $texts
+     */
+    private function recordSuccess(?TraceContext $span, \DateTimeImmutable $startedAt, float $start, array $texts): void
+    {
+        if ($span === null) {
+            return;
+        }
+
+        $totalChars = 0;
+        foreach ($texts as $text) {
+            $totalChars += mb_strlen($text);
+        }
+        $estimatedTokens = (int) ceil($totalChars / self::ESTIMATED_CHARS_PER_TOKEN);
+        $costUsd = $estimatedTokens * (self::USD_PER_MILLION_TOKENS / 1_000_000);
+
+        $this->recorder->record($span, new StepRecord(
+            'embed',
+            $startedAt,
+            $this->elapsedMs($start),
+            StepOutcome::Ok,
+            vendorUnits: new VendorUnits('cohere', 'embed_token_estimated', $estimatedTokens, self::PRICE_VERSION, $costUsd),
+        ));
+    }
+
+    private function recordFailure(?TraceContext $span, \DateTimeImmutable $startedAt, float $start, string $errorClass): void
+    {
+        if ($span === null) {
+            return;
+        }
+
+        $this->recorder->record(
+            $span,
+            new StepRecord('embed', $startedAt, $this->elapsedMs($start), StepOutcome::Failed, $errorClass),
+        );
+    }
+
+    /**
+     * Elapsed milliseconds since $startSeconds (microtime(true)) — a
+     * measurement, not domain time (same convention as
+     * SupervisedTurnDispatcher's trace timing).
+     */
+    private function elapsedMs(float $startSeconds): float
+    {
+        return (microtime(true) - $startSeconds) * 1000.0;
     }
 }
