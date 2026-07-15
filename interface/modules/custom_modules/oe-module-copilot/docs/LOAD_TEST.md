@@ -13,8 +13,10 @@ Two request classes were exercised:
   unauthenticated, but a full PHP + session + DB bootstrap; the heaviest
   no-credential page.
 - **Co-Pilot API** (`GET /apis/default/api/copilot/health`, Bearer token) —
-  the real API stack: OAuth2 token validation, the module's default-deny
-  guarded route (S5), and the handler's DB probes.
+  the shared API stack every module route rides: OAuth2 token validation and
+  the module's default-deny guarded route (S5), both DB-backed. The handler
+  itself is liveness-only (no DB probe — that is `/ready`), so these numbers
+  measure the auth + route-guard path, not dependency-probe capacity.
 
 The **LLM turn path was deliberately not load-tested**: each turn is a paid
 vendor call (~$0.019 text, more with vision/evidence — see
@@ -39,9 +41,10 @@ than hidden.
 2. **50 concurrent users: the API path hits a hard database ceiling.**
    21.8% of requests failed with HTTP 500. Container logs attribute every
    failure to MariaDB `SQLSTATE[08004]/[HY000] "Too many connections"` —
-   each PHP request opens its own DB connection (OAuth validation + guarded
-   route + handler), and 50 simultaneous connections exhaust the single
-   MariaDB container's `max_connections` budget. The login page survived at
+   each PHP request opens its own DB connection for OAuth token validation
+   and the guarded-route ACL check (the `/health` handler itself opens
+   none), and 50 simultaneous connections exhaust the single MariaDB
+   container's `max_connections` budget. The login page survived at
    50 users because its slower page build naturally staggers connections.
 3. **Failure mode is honest, not silent:** over-capacity requests fail fast
    with a 5xx (p95 of the mixed run stayed under 600 ms) rather than queueing
@@ -59,11 +62,14 @@ than hidden.
 ## Reproduction
 
 ```sh
-# 10-user and 50-user runs, API path (token via demo/copilot-demo.sh token):
+# 10-user and 50-user runs, API path (token via demo/copilot-demo.sh token).
+# The bearer token rides an env var, never argv (argv is visible to local
+# process inspection):
+export LOADTEST_BEARER_TOKEN="$TOKEN"
 python3 interface/modules/custom_modules/oe-module-copilot/bin/loadtest.py \
-  'https://openemr-production-4eba.up.railway.app/apis/default/api/copilot/health' 10 200 "$TOKEN"
+  'https://openemr-production-4eba.up.railway.app/apis/default/api/copilot/health' 10 200
 python3 interface/modules/custom_modules/oe-module-copilot/bin/loadtest.py \
-  'https://openemr-production-4eba.up.railway.app/apis/default/api/copilot/health' 50 500 "$TOKEN"
+  'https://openemr-production-4eba.up.railway.app/apis/default/api/copilot/health' 50 500
 ```
 
 Raw JSON outputs from the recorded runs are inlined below.
