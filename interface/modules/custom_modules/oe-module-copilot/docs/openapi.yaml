@@ -1,0 +1,874 @@
+openapi: 3.0.3
+info:
+  title: Clinical Co-Pilot Module API
+  version: 1.0.0
+  description: >-
+    REST surface for the OpenEMR Clinical Co-Pilot module
+    (oe-module-copilot), contributed exclusively through
+    RestApiCreateEvent — no core route table or globals.php edits
+    (ARCHITECTURE.md §2).
+
+
+    Every path below is registered through the module's
+    GuardedRouteRegistrar, which wraps each handler in an explicit
+    ACL check before it runs (AUDIT finding S5: OpenEMR's REST
+    dispatcher has no default-deny gate of its own, so this module
+    supplies one by construction — a route can only be registered
+    together with an AclRequirement, and an invocation without a
+    resolvable HttpRestRequest is denied before any handler code
+    executes). See src/Bootstrap.php and src/Routes/GuardedRouteRegistrar.php.
+
+
+    All patient reads and the two sanctioned writes (attaching an
+    uploaded source document, and persisting VLM-extracted facts as
+    provenance-linked observations — founder-approved 2026-07-13, see
+    CLAUDE.md "Bright lines") execute as the delegated, authenticated
+    physician via this OAuth2-protected surface — never a service
+    account, never the native background path ($ignoreAuth — S4/S6).
+
+
+    Every crossing of patient data to an external vendor (the
+    answer-model call on /turn, the VLM extraction call on
+    /document, the embed/rerank calls behind ask_evidence) is
+    disclosure-logged BEFORE the call via EventAuditLogger's
+    external-AI / document-media categories (C1/C5) — logging is not
+    optional and is not visible on the wire, so it is described here
+    rather than modeled as a response field.
+
+
+    All patient reads and both writes go through the FHIR/REST
+    surface (never raw legacy tables, never a globals.php bootstrap);
+    the FHIR side of that surface is GET-only — the derived-observation
+    write below rides the native procedure_order -> procedure_report ->
+    procedure_result chain, not a FHIR write.
+servers:
+  - url: '{baseUrl}/apis/{site}'
+    description: >-
+      An OpenEMR deployment's standard (non-FHIR) REST API root. The
+      module's routes are registered under this root's /api/copilot
+      prefix (see servers/routes/rest-routes.yaml wiring generally,
+      and this module's Bootstrap::registerApiRoutes()).
+    variables:
+      baseUrl:
+        default: https://localhost:9300
+        description: Scheme + host (+ port) of the OpenEMR deployment.
+      site:
+        default: default
+        description: OpenEMR multi-site identifier.
+tags:
+  - name: Health
+    description: >-
+      Unauthenticated-shape liveness/readiness probes — still ACL-guarded
+      (patients.demo) like every other module route, never exempt from S5.
+  - name: Turn
+    description: >-
+      UC2/UC7 — the follow-up Q&A turn: deterministic must-not-miss
+      findings, an honest unevaluable list, and a verified,
+      citation-grounded answer (or an honest degrade). Optionally
+      augments the answer with reranked, cited guideline evidence
+      when the clinician explicitly asks for it (ask_evidence).
+  - name: Ingestion
+    description: >-
+      UC6 — attach a source document (lab PDF / intake form) to its
+      patient and extract structured, per-field-cited facts via VLM.
+      One of the two sanctioned writes (W2_ARCHITECTURE.md §2).
+  - name: Citation
+    description: >-
+      UC6/UC7 — click-to-source resolution: turns a citation token
+      minted by ReferenceIndex::tokenFor() into the minimum-necessary
+      preview a clinician needs to verify a claim, re-grounded against
+      LIVE data on every call (never a cached turn).
+security:
+  - BearerAuth: []
+paths:
+  /api/copilot/ping:
+    get:
+      operationId: copilotPing
+      tags: [Health]
+      summary: Trivial liveness ping.
+      description: >-
+        Returns a fixed { "status": "ok" } body once the ACL guard has
+        passed. No dependency checks — use /api/copilot/ready for that.
+      security:
+        - BearerAuth: [user/ping.read]
+      responses:
+        '200':
+          description: The module is reachable and the caller is authorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/copilot/health:
+    get:
+      operationId: copilotHealth
+      tags: [Health]
+      summary: Process-liveness check.
+      description: >-
+        Returns a fixed { "status": "alive" } body. Process liveness
+        only — never a dependency probe (see /ready for that); a
+        process that can answer this at all is, by definition, alive.
+      security:
+        - BearerAuth: [user/health.read]
+      responses:
+        '200':
+          description: The process is alive and the caller is authorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [alive]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/copilot/ready:
+    get:
+      operationId: copilotReady
+      tags: [Health]
+      summary: Dependency readiness check (DB, trace sink, LLM config presence).
+      description: >-
+        Runs a small set of named checks (db, trace_sink, llm — the
+        latter is config-presence only, i.e. whether ANTHROPIC_API_KEY
+        is set, not a live vendor probe) and reports each individually
+        so a caller can tell WHICH dependency is unready. Returns HTTP
+        503 (with the same JSON body) when any check fails, 200 when
+        all pass.
+      security:
+        - BearerAuth: [user/ready.read]
+      responses:
+        '200':
+          description: All dependency checks passed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessReport'
+        '503':
+          description: One or more dependency checks failed; see `checks` for detail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/copilot/turn:
+    post:
+      operationId: copilotTurn
+      tags: [Turn]
+      summary: Run a follow-up Q&A turn against a patient's live chart.
+      description: >-
+        Delegated read (S4/S6): the principal is the authenticated API
+        user, never a service account. Runs the deterministic critical
+        subset (panic labs, drug-drug, drug-allergy, open follow-ups —
+        R13) unconditionally, then attempts a verified, chart-grounded
+        answer to `question`; an invented citation is stripped into
+        `answer.rejected` rather than shipped as if it were provenance
+        (R6/R10). A degraded turn (e.g. no LLM key configured) still
+        ships the deterministic findings with `answer: null` and an
+        honest `degraded_reason` — never a silent failure (R11).
+
+        When `ask_evidence` is true, this turn's guideline evidence is
+        resolved through the real supervised dispatch (Supervisor +
+        EvidenceRetrieverWorkerImpl; MariaDB hybrid FULLTEXT+VECTOR
+        retrieval, Cohere embed/rerank) and folded into the answer's
+        allowed field set — the physician's explicit toggle, never an
+        inferred NLP classification of the question.
+      security:
+        - BearerAuth: [user/turn.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TurnRequest'
+            examples:
+              basicFollowUp:
+                summary: A plain follow-up question, no evidence requested.
+                value:
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+                  question: 'What changed since the last visit?'
+              withPriorTurns:
+                summary: A follow-up carrying prior turn context.
+                value:
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+                  question: 'And is the anticoagulation still current?'
+                  prior_turns:
+                    - 'What changed since the last visit?'
+              askEvidence:
+                summary: >-
+                  UC7 — the clinician explicitly asks for guideline
+                  evidence this turn (ask_evidence: true).
+                value:
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+                  question: 'What is the recommended BP target for this patient?'
+                  ask_evidence: true
+      responses:
+        '200':
+          description: >-
+            The turn's full preserve-distrust contract: deterministic
+            findings, an honest unevaluable list, and either a verified
+            answer or an honest degrade — never both null and silent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnResponse'
+              examples:
+                grounded:
+                  summary: A grounded, non-degraded turn.
+                  value:
+                    correlation_id: '3fa1c2e4-....'
+                    degraded: false
+                    degraded_reason: null
+                    must_not_miss:
+                      - type: PanicLab
+                        summary: 'Potassium 6.8 mmol/L (critical high) — result 2026-07-05'
+                        refs:
+                          - token: 'procedure_result:lab-k'
+                            kind: Lab result
+                            label: 'Potassium 6.8 mmol/L'
+                    unevaluable: []
+                    answer:
+                      grounded:
+                        - text: 'On warfarin.'
+                          refs:
+                            - token: 'lists:med-warf'
+                              kind: Medication
+                              label: 'Warfarin 5mg Tablet'
+                      rejected: []
+                degraded:
+                  summary: A degraded turn (e.g. no LLM key configured).
+                  value:
+                    correlation_id: '3fa1c2e4-....'
+                    degraded: true
+                    degraded_reason: 'The answer model is not available right now.'
+                    must_not_miss:
+                      - type: PanicLab
+                        summary: 'Potassium 6.8 mmol/L (critical high) — result 2026-07-05'
+                        refs:
+                          - token: 'procedure_result:lab-k'
+                            kind: Lab result
+                            label: 'Potassium 6.8 mmol/L'
+                    unevaluable: []
+                    answer: null
+        '400':
+          description: >-
+            Refused before the chart read or the LLM ever runs: malformed
+            JSON, a non-object body, or blank/missing patient_uuid /
+            question (\DomainException surfaces as a generic 400 — never
+            internals, R11).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/copilot/document:
+    post:
+      operationId: copilotDocumentUpload
+      tags: [Ingestion]
+      summary: Attach a source document to a patient and extract structured facts.
+      description: >-
+        One of the two writes this module is permitted (founder-approved
+        2026-07-13): (a) attaches the uploaded document to `patient_uuid`
+        via the guarded document store (dedupe-by-hash), then (b) runs VLM
+        extraction against the module's committed lab_pdf/intake_form JSON
+        Schemas and persists extracted facts as observations
+        provenance-linked back to the source document — never a native
+        med/allergy list write (that is med reconciliation, out of scope).
+        Both steps execute as the delegated physician, never a service
+        account.
+
+        Accepts exactly ONE of two mutually exclusive upload modes — both
+        or neither present is refused as ambiguous/incomplete:
+          - path mode: `file_path` (a server-side path) + `file_size_bytes`;
+          - content mode: `filename` + `file_content_b64` (raw bytes, strict
+            base64) — the browser-reachable shape, since a static page
+            cannot supply a server-side path.
+
+        Every extraction crossing to the VLM is disclosure-logged BEFORE
+        the call (document-media category, C1/C5). A partial extraction
+        is failed whole — never partially accepted (Decision W2) — and a
+        field the model cannot ground in a source region is absent, never
+        defaulted.
+      security:
+        - BearerAuth: [user/document.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadRequest'
+            examples:
+              contentModeLabPdf:
+                summary: Browser upload (content mode) of a lab PDF.
+                value:
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+                  doc_type: lab_pdf
+                  filename: 'cbc-panel.pdf'
+                  file_content_b64: 'JVBERi0xLjcgc2FtcGxlLXBkZi1wbGFjZWhvbGRlci1ieXRlcwo='
+              contentModeIntakeForm:
+                summary: Browser upload (content mode) of an intake form.
+                value:
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+                  doc_type: intake_form
+                  filename: 'front-desk-intake.pdf'
+                  file_content_b64: 'JVBERi0xLjcgc2FtcGxlLXBkZi1wbGFjZWhvbGRlci1ieXRlcwo='
+              pathModeLegacy:
+                summary: >-
+                  Server-side path mode (e.g. a CLI/tooling caller with
+                  filesystem access to the OpenEMR host — not reachable
+                  from a browser).
+                value:
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+                  doc_type: lab_pdf
+                  file_path: '/tmp/uploads/cbc-panel.pdf'
+                  file_size_bytes: 48213
+      responses:
+        '200':
+          description: The document was attached and extraction completed (or ran degraded per DTO rules).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentUploadResponse'
+              example:
+                document_id: '742'
+                extraction_status: extracted
+        '400':
+          description: >-
+            Refused before any store/VLM call: missing/blank required
+            fields, an invalid doc_type, a disallowed file extension, an
+            out-of-range file_size_bytes, malformed base64, or both/neither
+            upload mode supplied (\DomainException, generic message, R11).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: A genuine storage/transaction failure; nothing was persisted (generic message, R11).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: >-
+            Document ingestion is not yet available in this deployment
+            (no LLM API key configured) — an honest degrade rather than a
+            silently faked ingestion (R11).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/copilot/source:
+    post:
+      operationId: copilotSourceResolve
+      tags: [Citation]
+      summary: Resolve a citation token to a minimum-necessary source preview.
+      description: >-
+        Resolves the SAME self-describing `sourceType:sourceId[#field]`
+        token minted by ReferenceIndex::tokenFor() and shipped to the
+        panel by /turn's `refs` entries, into the smallest preview a
+        clinician needs to verify a claim — re-grounded against LIVE data
+        on every call (never a cached turn). Branches on sourceType into
+        four rendered variants: `guideline` (real corpus index chunk),
+        `document` (attached lab_pdf/intake_form extraction lineage, OR a
+        derived_observation resolved to the document that grounds it —
+        PS-6: a derived observation is a pointer, never evidence, so it
+        never terminates a citation chain on its own), `detector` (a
+        typed, PHI-minimal finding label, no DB read), and `chart` (a
+        PHI-minimal pointer, no value fetched). A document resolved for
+        a patient other than the caller-supplied `patient_uuid` is
+        refused with the IDENTICAL message a genuinely unknown document
+        gets — no enumeration side channel for a cross-patient leak.
+      security:
+        - BearerAuth: [user/source.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceResolveRequest'
+            examples:
+              guidelineToken:
+                summary: A guideline evidence citation (UC7).
+                value:
+                  token: 'guideline:protocol-htn-v1#htn.bp-target'
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+              labPdfToken:
+                summary: An extracted lab-PDF field citation (UC6).
+                value:
+                  token: 'lab_pdf:742#analytes[0].value'
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+              detectorToken:
+                summary: A deterministic critical-subset finding citation.
+                value:
+                  token: 'detector:panic-potassium-high'
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+              chartToken:
+                summary: A plain chart-record pointer (no value fetched).
+                value:
+                  token: 'procedure_result:lab-potassium'
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+      responses:
+        '200':
+          description: The resolved, minimum-necessary source preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourcePreview'
+              examples:
+                guideline:
+                  summary: guideline variant
+                  value:
+                    type: guideline
+                    source_id: protocol-htn-v1
+                    chunk_id: htn.bp-target
+                    heading: 'Blood pressure target'
+                    snippet: 'Target BP <130/80 mmHg for most adults with hypertension...'
+                document:
+                  summary: document variant (lab_pdf/intake_form/derived_observation)
+                  value:
+                    type: document
+                    document_id: 742
+                    filename: cbc-panel.pdf
+                    page: '2'
+                    quote: '4.4'
+                    field: 'analytes[0].value'
+                    bbox: null
+                    document_base64: null
+                    document_mime: null
+                detector:
+                  summary: detector variant
+                  value:
+                    type: detector
+                    finding_id: panic-potassium-high
+                    label: 'Potassium 6.8 mmol/L (critical high)'
+                chart:
+                  summary: chart variant
+                  value:
+                    type: chart
+                    source_type: procedure_result
+                    source_id: lab-potassium
+        '400':
+          description: >-
+            Refused before any lookup completes: blank/missing token or
+            patient_uuid, a malformed token (no ':'), a required-but-missing
+            '#' fragment, an unresolvable id, an unsupported sourceType, or
+            a resolved document that does not belong to patient_uuid
+            (\DomainException, generic message, no enumeration side channel).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: OpenEMR OAuth2 access token
+      description: >-
+        A site-scoped OpenEMR OAuth2 access token (password or
+        authorization-code grant against /oauth2/{site}/token — see
+        demo/copilot-demo.sh). The token must have been granted the
+        segment-specific scope each operation names below (e.g.
+        `user/turn.write`); the module registers these scopes itself
+        via RestApiScopeEvent (Bootstrap::registerApiScopes()) — a
+        token missing the scope is rejected before this module's own
+        ACL guard even runs. Note `user/source.write` is deliberately
+        "write", not "read": the core dispatcher derives a POST's
+        required action as `create`, so only the write-scoped grant
+        satisfies it even though the resolve itself is read-only
+        (see Bootstrap::registerApiScopes() for the full rationale).
+  responses:
+    Unauthorized:
+      description: >-
+        No valid/unexpired OAuth2 bearer token, or the token lacks the
+        operation's required scope. Enforced by the core REST
+        dispatcher's OAuth2 layer BEFORE this module's route handler
+        runs; the exact body shape is core's, not this module's
+        (UNVERIFIED here — not exercised by this module's own tests).
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    Forbidden:
+      description: >-
+        The bearer token's authenticated principal failed this route's
+        ACL check (AclRequirement — 'patients'/'demo' for the health
+        routes, 'patients'/'med' for turn/document/source), or the
+        request carried no resolvable authenticated user principal at
+        all (delegation only — never a service account, S4/S6).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: >-
+            A generic, non-internal message (\DomainException surfaces
+            never echo SQL, file paths, or vendor error text — R11).
+      additionalProperties: false
+    ReadinessReport:
+      type: object
+      required: [ready, checks]
+      properties:
+        ready:
+          type: boolean
+        checks:
+          type: object
+          description: Named check id -> boolean pass/fail (e.g. db, trace_sink, llm).
+          additionalProperties:
+            type: boolean
+      additionalProperties: false
+    Citation:
+      type: object
+      description: >-
+        The panel's rendered citation object: the exact grounding token
+        (ReferenceIndex::tokenFor() — resolvable at POST /api/copilot/source)
+        plus a humanized kind/label added from the same chart, so a
+        physician gets a readable, clickable citation without anything
+        being invented (R6/R10).
+      required: [token, kind, label]
+      properties:
+        token:
+          type: string
+          description: 'sourceType:sourceId[#fieldOrChunkId] — the canonical mint.'
+          example: 'lists:med-warf'
+        kind:
+          type: string
+          example: Medication
+        label:
+          type: string
+          nullable: true
+      additionalProperties: false
+    TurnRequest:
+      type: object
+      required: [patient_uuid, question]
+      properties:
+        patient_uuid:
+          type: string
+          description: Non-blank; refused before any read otherwise.
+        question:
+          type: string
+          description: Non-blank; refused before any read otherwise.
+        prior_turns:
+          type: array
+          description: Optional prior-turn question text, oldest first.
+          items:
+            type: string
+        ask_evidence:
+          type: boolean
+          default: false
+          description: >-
+            UC7 — an explicit clinician toggle requesting reranked,
+            cited guideline evidence for this turn. Never an inferred
+            NLP classification of the question.
+      additionalProperties: false
+    TurnResponse:
+      type: object
+      required: [correlation_id, degraded, degraded_reason, must_not_miss, unevaluable, answer]
+      properties:
+        correlation_id:
+          type: string
+          nullable: true
+          description: Trace join key (T17) — carried explicitly, never ambient (S4).
+        degraded:
+          type: boolean
+        degraded_reason:
+          type: string
+          nullable: true
+          description: Set if and only if `degraded` is true; never echoes vendor internals.
+        must_not_miss:
+          type: array
+          description: >-
+            The deterministic critical subset (panic labs, drug-drug,
+            drug-allergy, open follow-ups — R13). Guaranteed by pure,
+            unit-tested detector code — never left to model salience —
+            and present even on a degraded turn.
+          items:
+            $ref: '#/components/schemas/Finding'
+        unevaluable:
+          type: array
+          description: Honest uncertainty is content, not an error (D0/D6).
+          items:
+            $ref: '#/components/schemas/UnevaluableItem'
+        answer:
+          nullable: true
+          description: null exactly when `degraded` is true.
+          allOf:
+            - $ref: '#/components/schemas/VerifiedAnswer'
+      additionalProperties: false
+    Finding:
+      type: object
+      required: [type, summary, refs]
+      properties:
+        type:
+          type: string
+          description: The detector finding-type enum case name (e.g. PanicLab, DrugDrugInteraction).
+        summary:
+          type: string
+        refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+          minItems: 1
+          description: A finding without citations cannot be trusted at a glance.
+      additionalProperties: false
+    UnevaluableItem:
+      type: object
+      required: [reason, refs]
+      properties:
+        reason:
+          type: string
+        refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+      additionalProperties: false
+    VerifiedAnswer:
+      type: object
+      required: [grounded, rejected]
+      properties:
+        grounded:
+          type: array
+          items:
+            type: object
+            required: [text, refs]
+            properties:
+              text:
+                type: string
+              refs:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Citation'
+            additionalProperties: false
+        rejected:
+          type: array
+          description: >-
+            Claims whose claimed citation did not verify. Text ONLY —
+            the claimed sourceIds are never forwarded, so an invented
+            citation is never presented as if it were provenance
+            (R6/R10).
+          items:
+            type: object
+            required: [text]
+            properties:
+              text:
+                type: string
+            additionalProperties: false
+      additionalProperties: false
+    DocumentUploadRequest:
+      description: >-
+        Exactly one upload mode must be supplied: path mode (file_path +
+        file_size_bytes) OR content mode (filename + file_content_b64) —
+        both or neither is refused as ambiguous/incomplete.
+      oneOf:
+        - $ref: '#/components/schemas/DocumentUploadPathMode'
+        - $ref: '#/components/schemas/DocumentUploadContentMode'
+    DocumentUploadPathMode:
+      type: object
+      required: [patient_uuid, doc_type, file_path, file_size_bytes]
+      properties:
+        patient_uuid:
+          type: string
+        doc_type:
+          type: string
+          enum: [lab_pdf, intake_form]
+        file_path:
+          type: string
+          description: >-
+            A server-side path (not reachable from a browser). Extension
+            must be one of pdf/png/jpg/jpeg.
+        file_size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+          description: Genuine integer only — a numeric string is refused.
+      additionalProperties: false
+    DocumentUploadContentMode:
+      type: object
+      required: [patient_uuid, doc_type, filename, file_content_b64]
+      properties:
+        patient_uuid:
+          type: string
+        doc_type:
+          type: string
+          enum: [lab_pdf, intake_form]
+        filename:
+          type: string
+          description: >-
+            Extension-allowlisted exactly like file_path
+            (pdf/png/jpg/jpeg); never trusted for anything else.
+        file_content_b64:
+          type: string
+          format: byte
+          description: >-
+            Strict base64 of the raw file bytes (decoded length capped
+            at 10 MiB, same as file_size_bytes's cap). The
+            browser-reachable upload shape, since a static page cannot
+            supply a server-side path.
+      additionalProperties: false
+    DocumentUploadResponse:
+      type: object
+      required: [document_id, extraction_status]
+      properties:
+        document_id:
+          type: string
+          description: The attached document's id (native `documents` table row).
+        extraction_status:
+          type: string
+          description: >-
+            e.g. "extracted" on success. A partial extraction is failed
+            whole, never partially accepted (Decision W2), so this
+            module never emits a "partial" status.
+      additionalProperties: false
+    SourceResolveRequest:
+      type: object
+      required: [token, patient_uuid]
+      properties:
+        token:
+          type: string
+          description: 'sourceType:sourceId[#fieldOrChunkId] — the ReferenceIndex::tokenFor() grammar.'
+        patient_uuid:
+          type: string
+      additionalProperties: false
+    SourcePreview:
+      description: >-
+        One of four rendered variants, discriminated by `type`. The
+        `document` variant covers lab_pdf/intake_form extraction
+        citations AND derived_observation citations (PS-6: a derived
+        observation resolves to the document that grounds it, never
+        rendered as its own kind of evidence).
+      oneOf:
+        - $ref: '#/components/schemas/GuidelineSourcePreview'
+        - $ref: '#/components/schemas/DocumentSourcePreview'
+        - $ref: '#/components/schemas/DetectorSourcePreview'
+        - $ref: '#/components/schemas/ChartSourcePreview'
+      discriminator:
+        propertyName: type
+        mapping:
+          guideline: '#/components/schemas/GuidelineSourcePreview'
+          document: '#/components/schemas/DocumentSourcePreview'
+          detector: '#/components/schemas/DetectorSourcePreview'
+          chart: '#/components/schemas/ChartSourcePreview'
+    GuidelineSourcePreview:
+      type: object
+      required: [type, source_id, chunk_id, heading, snippet]
+      properties:
+        type:
+          type: string
+          enum: [guideline]
+        source_id:
+          type: string
+        chunk_id:
+          type: string
+        heading:
+          type: string
+        snippet:
+          type: string
+          description: >-
+            A bounded excerpt of the real chunk body (minimum-necessary
+            evidence applies to previews too) — never the whole chunk.
+      additionalProperties: false
+    DocumentSourcePreview:
+      type: object
+      required: [type, document_id, filename, page, quote, field]
+      properties:
+        type:
+          type: string
+          enum: [document]
+        document_id:
+          type: integer
+        filename:
+          type: string
+        page:
+          type: string
+          nullable: true
+        quote:
+          type: string
+          description: The cited value, byte-exact — the thing the clinician verifies.
+        field:
+          type: string
+          description: The schema field path that is the citation anchor.
+        bbox:
+          nullable: true
+          description: >-
+            OPTIONAL, ADDITIVE: a source-region bounding box for the
+            cited value, when the extraction pipeline records one.
+            Shape UNVERIFIED as of this writing — being introduced by a
+            parallel change; kept permissive (free-form object) here
+            rather than over-specified.
+          type: object
+          additionalProperties: true
+        document_base64:
+          type: string
+          nullable: true
+          format: byte
+          description: >-
+            OPTIONAL, ADDITIVE: the source document's page image/bytes
+            for inline preview rendering, when the resolver supplies
+            one. UNVERIFIED shape as of this writing (parallel change).
+        document_mime:
+          type: string
+          nullable: true
+          description: >-
+            OPTIONAL, ADDITIVE: the MIME type of `document_base64` when
+            present (e.g. application/pdf, image/png). UNVERIFIED as of
+            this writing (parallel change).
+      additionalProperties: false
+    DetectorSourcePreview:
+      type: object
+      required: [type, finding_id, label]
+      properties:
+        type:
+          type: string
+          enum: [detector]
+        finding_id:
+          type: string
+        label:
+          type: string
+          description: >-
+            The exact CriticalFinding::summary text the same finding id
+            produces everywhere else in this module — never a paraphrase.
+      additionalProperties: false
+    ChartSourcePreview:
+      type: object
+      required: [type, source_type, source_id]
+      properties:
+        type:
+          type: string
+          enum: [chart]
+        source_type:
+          type: string
+        source_id:
+          type: string
+      additionalProperties: false

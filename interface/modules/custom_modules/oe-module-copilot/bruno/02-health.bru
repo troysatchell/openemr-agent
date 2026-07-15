@@ -1,0 +1,25 @@
+meta {
+  name: Health
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/apis/{{site}}/api/copilot/health
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  # Health
+
+  Process-liveness only for `GET /api/copilot/health` — returns
+  `{"status": "alive"}` once the ACL guard (`patients`/`demo`) and the
+  `user/health.read` scope check pass. Deliberately has no dependency
+  checks (DB, trace sink, LLM key) — that is the Ready request's job.
+  A process that can answer this at all is, by definition, alive.
+}

@@ -1,0 +1,56 @@
+meta {
+  name: Turn
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/apis/{{site}}/api/copilot/turn
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patientUuid}}",
+    "question": "What is the recommended BP target for this patient, and is anything urgent?",
+    "ask_evidence": true
+  }
+}
+
+docs {
+  # Turn
+
+  UC2/UC7 — `POST /api/copilot/turn`, the follow-up Q&A turn. Requires the
+  `user/turn.write` scope and the `patients`/`med` ACL. Runs the
+  deterministic critical subset unconditionally (panic labs, drug-drug,
+  drug-allergy, open follow-ups — R13; these ship even on a degraded turn)
+  and attempts a verified, chart-grounded answer; an invented citation is
+  moved to `answer.rejected` rather than shipped as provenance (R6/R10).
+
+  ## ask_evidence toggle
+
+  The example body above sets `"ask_evidence": true` — the physician's
+  explicit UC7 request for reranked, cited guideline evidence this turn
+  (real MariaDB hybrid FULLTEXT+VECTOR retrieval + Cohere embed/rerank,
+  never an inferred NLP classification of the question). To exercise the
+  plain Week 1 flow instead, drop the `ask_evidence` key (or set it
+  `false`) — the response shape is identical either way, just without
+  guideline-sourced grounded claims.
+
+  ## prior_turns (optional)
+
+  Add an optional `"prior_turns": ["What changed since the last visit?"]`
+  array to carry earlier question text into this turn's context.
+
+  Every citation `token` in the response is resolvable via the Source
+  Resolve request in this collection — that's the click-to-source loop.
+}

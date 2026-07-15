@@ -1,0 +1,28 @@
+meta {
+  name: Ready
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/apis/{{site}}/api/copilot/ready
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  # Ready
+
+  Dependency readiness probe for `GET /api/copilot/ready` — runs three
+  named checks (`db`, `trace_sink`, `llm` — the last is config-presence
+  only: whether `ANTHROPIC_API_KEY` is set, not a live vendor call) and
+  reports each individually so a caller can tell WHICH dependency is
+  unready. Returns HTTP 503 (same JSON shape) if any check fails, 200 if
+  all pass. Requires the `user/ready.read` scope and the `patients`/`demo`
+  ACL, same as Ping/Health. Run this before Turn/Document if you expect a
+  degraded turn and want to know why ahead of time.
+}

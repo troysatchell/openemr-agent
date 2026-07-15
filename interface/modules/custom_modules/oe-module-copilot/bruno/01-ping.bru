@@ -1,0 +1,26 @@
+meta {
+  name: Ping
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/apis/{{site}}/api/copilot/ping
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  # Ping
+
+  Trivial liveness probe for `GET /api/copilot/ping` — confirms the module
+  route is wired, the guarded route registrar's ACL check passes
+  (`patients`/`demo`, AUDIT S5), and the OAuth2 token carries the
+  `user/ping.read` scope. Always returns `{"status": "ok"}`; no dependency
+  checks (use the Ready request for that). Not part of a clinical flow —
+  useful as a first smoke check before running Turn/Document/Source.
+}
