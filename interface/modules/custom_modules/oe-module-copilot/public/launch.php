@@ -20,12 +20,12 @@
  * page NEVER redirects to an authorize endpoint on the strength of an
  * unrecognised issuer (R11 generic failure, no redirect).
  *
- * The PKCE verifier, state, and the endpoints/identifiers the panel needs to
- * complete the code exchange are handed to the browser via `sessionStorage`
- * only (never a cookie, never a server-side session-keyed store) — the
- * verifier is a bearer of authorization-code exchange, not clinical data,
- * and public/panel.html reads it back after the redirect completes the
- * round trip (TRO-53).
+ * The PKCE verifier and state are held in the PHP session (server-side) — a
+ * confidential client (founder decision D2, 2026-07-15) authenticates to the
+ * token endpoint with its secret, so the exchange runs server-side in
+ * public/launch-exchange.php; the verifier is proof of possession and never
+ * touches the browser. panel.html completes the round trip by POSTing the
+ * returned {code,state} to that endpoint (TRO-53).
  *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
@@ -41,6 +41,7 @@ use OpenEMR\FHIR\Config\ServerConfig;
 use OpenEMR\Modules\Copilot\Panel\SmartLaunch\AuthorizeRedirect;
 use OpenEMR\Modules\Copilot\Panel\SmartLaunch\IssuerMismatchException;
 use OpenEMR\Modules\Copilot\Panel\SmartLaunch\PkcePair;
+use OpenEMR\Modules\Copilot\Panel\SmartLaunch\SmartLaunchSession;
 
 require_once __DIR__ . '/../../../../globals.php';
 
@@ -74,7 +75,6 @@ $iss = $issParam;
 $serverConfig = new ServerConfig();
 $expectedFhirBase = $serverConfig->getFhirUrl();
 $authorizeEndpoint = $serverConfig->getAuthorizeUrl();
-$tokenEndpoint = $serverConfig->getTokenUrl();
 
 $clientId = getenv('COPILOT_SMART_CLIENT_ID');
 if ($clientId === false || trim($clientId) === '') {
@@ -112,42 +112,17 @@ try {
     $fail(400, 'This launch request is malformed. Please relaunch from the patient chart.');
 }
 
-// Handed to the browser via sessionStorage only — never a cookie, never a
-// server-side session-keyed store. panel.html reads this back after the
-// authorize redirect completes and clears it once the code exchange
-// succeeds.
-$handshakeState = [
-    'verifier' => $pair->verifier,
-    'state' => $state,
-    'token_endpoint' => $tokenEndpoint,
-    'client_id' => $clientId,
-    'redirect_uri' => $redirectUri,
-];
+// The verifier + state live in the PHP SESSION, never the browser: a
+// confidential client (D2) exchanges the code server-side with its secret,
+// and the verifier is proof of possession. launch-exchange.php reads these
+// back — keyed to this same session — and clears them once the code is
+// exchanged (single use). redirect_uri is stored too so the exchange sends
+// the identical value the authorize request used (OAuth requires the match).
+SmartLaunchSession::store($pair->verifier, $state, $redirectUri);
 
-$jsonFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP;
-try {
-    $handshakeStateJson = json_encode($handshakeState, JSON_THROW_ON_ERROR | $jsonFlags);
-    $authorizeUrlJson = json_encode($authorizeUrl, JSON_THROW_ON_ERROR | $jsonFlags);
-} catch (\JsonException $e) {
-    ServiceContainer::getLogger()->error('copilot SMART launch failed: handshake state encoding error', ['exception' => $e]);
-    $fail(400, 'This launch request could not be processed. Please relaunch from the patient chart.');
-}
-
-header('Content-Type: text/html; charset=utf-8');
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clinical Co-Pilot &mdash; launching&hellip;</title>
-</head>
-<body>
-<p>Launching Clinical Co-Pilot&hellip;</p>
-<script>
-"use strict";
-sessionStorage.setItem('copilot_smart_launch', JSON.stringify(<?php echo $handshakeStateJson; ?>));
-window.location.replace(<?php echo $authorizeUrlJson; ?>);
-</script>
-</body>
-</html>
+// Plain server-side redirect — the browser only needs to reach the authorize
+// endpoint; nothing secret rides the URL (the challenge is public, the
+// verifier stayed server-side).
+header('Location: ' . $authorizeUrl);
+http_response_code(302);
+exit;

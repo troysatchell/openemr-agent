@@ -59,12 +59,13 @@
   affordance only (R-W3) — a null bbox renders the page with no overlay,
   honestly, rather than guessing a box.
 
-  SMART EHR-launch mode (TRO-53; docs/TRO51_SMART_LAUNCH_DESIGN.md §4.2):
-  when this page loads carrying `?code&state` from an authorization redirect
-  AND a matching pending handshake in `sessionStorage` (written by
-  `launch.php`), it completes the PKCE code exchange itself — POSTing the
-  token endpoint with `code_verifier`, never a client secret (public client)
-  — then fills the base/token/patient fields programmatically and adds
+  SMART EHR-launch mode (TRO-53; docs/TRO51_SMART_LAUNCH_DESIGN.md §4.2,
+  decision D2-confidential): when this page loads carrying `?code&state` from
+  an authorization redirect, it hands the opaque {code, state} to the
+  server-side exchange endpoint (`launch-exchange.php`), which holds the
+  confidential client secret and the session-bound PKCE verifier and performs
+  the exchange — the browser never sees a secret or a verifier. On success the
+  panel fills the base/token/patient fields programmatically and adds
   `launch-mode` to `<body>`, which hides the manual Connection fieldset (no
   base/token/UUID entry in a launched session). A failed exchange renders a
   visible error banner and stays in launch mode — it never falls back to
@@ -78,7 +79,7 @@
   body { margin:0; font:15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color:var(--ink); background:var(--bg); }
   /* SMART EHR-launch mode: the Connection fieldset is manual-entry chrome
      that a launched session never needs — base/token/patient all arrive via
-     the PKCE code exchange instead. */
+     the server-side confidential code exchange instead. */
   body.launch-mode #connection-fieldset { display: none; }
   #launch-context { display: none; background:#eef4ef; border:1px solid #bcd4c2; border-radius:8px; padding:8px 12px; margin:0 0 14px; font-size:13px; color:var(--ok); }
   body.launch-mode #launch-context { display: block; }
@@ -561,31 +562,18 @@ $("question").addEventListener("keydown", (e) => {
   }
 });
 
-// SMART EHR-launch code exchange (TRO-53): completes the handshake
-// launch.php started. Runs only when the URL actually carries an
-// authorization response AND sessionStorage still holds the matching
-// pending handshake — anything else (a bare visit to panel.html, a stale or
-// mismatched state) leaves the page in its ordinary manual-entry mode
-// untouched.
+// SMART EHR-launch completion (TRO-53; design D2-confidential): the panel
+// hands the opaque {code, state} back to the server-side exchange endpoint
+// (launch-exchange.php), which holds the client secret and the session-bound
+// PKCE verifier and performs the confidential code exchange. The browser
+// never sees a secret or a verifier. Runs only when the URL actually carries
+// an authorization response — a bare visit leaves the page in its ordinary
+// manual-entry mode untouched.
 async function completeSmartLaunch() {
   const params = new URLSearchParams(location.search);
   const code = params.get("code");
   const returnedState = params.get("state");
   if (!code || !returnedState) {
-    return;
-  }
-
-  const raw = sessionStorage.getItem("copilot_smart_launch");
-  if (!raw) {
-    return;
-  }
-  let pending = null;
-  try {
-    pending = JSON.parse(raw);
-  } catch (e) {
-    pending = null;
-  }
-  if (!pending || pending.state !== returnedState) {
     return;
   }
 
@@ -595,21 +583,16 @@ async function completeSmartLaunch() {
   // manual base/token/UUID entry (the token was never obtained either way).
   document.body.classList.add("launch-mode");
   history.replaceState(null, "", location.pathname);
-  sessionStorage.removeItem("copilot_smart_launch");
 
   const context = $("launch-context");
   try {
-    const body = new URLSearchParams();
-    body.set("grant_type", "authorization_code");
-    body.set("code", code);
-    body.set("redirect_uri", pending.redirect_uri);
-    body.set("client_id", pending.client_id);
-    body.set("code_verifier", pending.verifier);
-
-    const resp = await fetch(pending.token_endpoint, {
+    const resp = await fetch("launch-exchange.php", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
+      headers: { "Content-Type": "application/json" },
+      // Same-origin: the session cookie carries the server-side verifier +
+      // state this exchange is validated against.
+      credentials: "same-origin",
+      body: JSON.stringify({ code: code, state: returnedState }),
     });
     let data = null;
     try {
@@ -618,12 +601,12 @@ async function completeSmartLaunch() {
       data = null;
     }
     if (!resp.ok || !data || typeof data.access_token !== "string" || !data.access_token) {
-      const detail = (data && (data.error_description || data.error)) || ("HTTP " + resp.status);
+      const detail = (data && data.error) || ("HTTP " + resp.status);
       throw new Error(detail);
     }
 
-    // Public client + PKCE (design D2) — no client secret ever leaves the
-    // browser; code_verifier above is the sole proof of possession.
+    // The site segment mirrors ServerConfig's own API base construction; the
+    // panel's guarded-route calls ride the launch-bound token below.
     $("base").value = "/apis/default";
     $("token").value = data.access_token;
     $("uuid").value = typeof data.patient === "string" ? data.patient : "";

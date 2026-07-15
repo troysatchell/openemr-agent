@@ -1,11 +1,10 @@
 # TRO-51 Design — Patient-Scoped SMART Launch
 
-**Status:** PROVISIONAL — founder direction to proceed given 2026-07-15
-("proceed on next backlog ticket swarm"); the D1–D4 decisions below are
-implemented on their recommended options **pending founder ratification**
-(asked 2026-07-15, no response — recorded here so the merge review can veto
-any of them). The consent-skip global (D3) is NOT flipped without an
-explicit founder yes. This document is the design pass the epic requires.
+**Status:** IN PROGRESS — founder decided **D2 = confidential client**
+(2026-07-15, "confidential seems like the best practice"). D1 (strict
+binding) stands as implemented; D3 (consent-skip global) is NOT flipped
+without an explicit founder yes; D4 scope holds (this wave = TRO-52/53).
+This document is the design pass the epic requires.
 
 **Epic:** TRO-51. Children: TRO-52 (patient-bound authorization), TRO-53
 (EHR patient-context launch), TRO-54 (Week 2 flows in the embedded panel),
@@ -106,37 +105,29 @@ lines hold: extension via module seams only.
 
 ### 4.2 TRO-53 — EHR patient-context launch
 
-> **BLOCKING CONSTRAINT (verified live on the dev stack, 2026-07-15) — a
-> founder call is required.** The client-registration endpoint **refuses
-> `user/` scopes for a public client**: `POST /oauth2/default/registration`
-> with `application_type: public` + any `user/…` scope returns
+> **DECIDED: confidential client (founder, 2026-07-15).** Rationale, verified
+> live on the dev stack: the registration endpoint **refuses `user/` scopes
+> for a public client** — `POST /oauth2/default/registration` with
+> `application_type: public` + any `user/…` scope returns
 > `invalid_client_metadata: "system and user scopes are only allowed for
-> confidential clients"`. The same registration as `application_type:
-> private` (confidential) **succeeds**. Because §4.1 established that a
-> physician's EHR-launched token is `users`-role and every `/api/copilot/*`
-> route is therefore admitted as `user/<segment>.<verb>`
-> (`HttpRestRouteHandler.php:154`), the launched client **must hold the
-> module's `user/` route scopes** — which forces a **confidential** client.
-> CodeRabbit independently flagged the same contradiction (`TRO51-DOC-001`).
+> confidential clients"`; the same registration as `private` (confidential)
+> succeeds. Because §4.1 established that a physician's EHR-launched token is
+> `users`-role and every `/api/copilot/*` route is admitted as
+> `user/<segment>.<verb>` (`HttpRestRouteHandler.php:154`), the launched
+> client **must hold the module's `user/` route scopes**, which forces a
+> confidential client. CodeRabbit independently flagged the same doc
+> contradiction (`TRO51-DOC-001`).
 >
-> **This overturns recommended decision D2 (public client + PKCE).** The two
-> coherent options are:
-> - **D2-confidential (now recommended):** a confidential SMART client holds
->   the `user/` route scopes; PKCE is retained (valid and recommended even
->   for confidential clients), but the authorization-code → token exchange
->   **must move server-side** (it needs the client secret) — a small
->   module endpoint, not browser JS. `PkcePair`/`AuthorizeRedirect`/the
->   binding guard are unaffected; only `panel.html`'s current browser-side
->   exchange changes. This keeps §4.1 intact and touches no core scope model.
-> - **D2-public-repriced:** re-scope every module route to `patient/` context
->   and prove core admits a `users`-role EHR-launch token against
->   `patient/<segment>` admission (unverified; deeper in the scope model,
->   closer to the danger-zone bright line). Not recommended without a spike.
->
-> The frozen tests and the committed TRO-52/TRO-53 code are correct under
-> **either** option; only the client type and the exchange location differ.
-> **The live end-to-end smoke is parked on this decision** — recorded on the
-> PR, not silently resolved.
+> **Consequence — the code→token exchange moves server-side.** A confidential
+> client authenticates to the token endpoint with its **secret**, which must
+> never reach browser JS. So the exchange runs in a session-bound module
+> endpoint (`public/launch-exchange.php`); PKCE is retained (valid and
+> recommended for confidential clients too) with the **verifier held in the
+> PHP session**, never handed to the browser. `PkcePair`, `AuthorizeRedirect`,
+> and the `LaunchPatientBinding` guard are unchanged; `launch.php` stores the
+> handshake server-side and `panel.html` calls the exchange endpoint instead
+> of POSTing the token endpoint directly. This keeps §4.1 intact and touches
+> no core scope model.
 
 1. **Register the co-pilot as a SMART app** (runtime data via API Clients
    admin, not code): a **confidential** client (per the constraint above)
@@ -146,13 +137,18 @@ lines hold: extension via module seams only.
    `public/panel.html`. The chart's SMART card then lists the co-pilot
    automatically (`SmartLaunchController.php:193` — any enabled client with
    `launch`).
-2. **New `public/launch.php` + panel JS**: standard SMART app handshake —
-   receive `?launch&iss`, verify `iss` is our own FHIR base, run the
-   authorization-code + **PKCE** flow against `/oauth2/default/authorize`,
-   exchange the code (server-side under D2-confidential), read `patient`
-   from the token response context, open the panel bound to that patient.
-   No Connection fieldset: base = `iss`, token = exchange result, patient =
-   launch context.
+2. **`public/launch.php` + `public/launch-exchange.php` + panel JS**: the
+   SMART app handshake, split so the secret and verifier stay server-side.
+   `launch.php` receives `?launch&iss`, verifies `iss` is our own FHIR base,
+   mints a PKCE pair + state, stores `{verifier, state}` in the **PHP
+   session**, and redirects to `/oauth2/default/authorize`. The browser
+   returns to `panel.html` with `?code&state`; the panel POSTs `{code,
+   state}` to `launch-exchange.php`, which (session-bound, `globals.php`)
+   validates the state against the session, exchanges the code server-side
+   with the **client secret** (`COPILOT_SMART_CLIENT_SECRET`) and the
+   session verifier, and returns `{access_token, patient}`. The panel enters
+   launch mode: base = `/apis/<site>`, token = exchange result, patient =
+   launch context — no Connection fieldset.
 3. **Rebind on relaunch:** each launch mints a fresh token bound to the
    currently-open chart; closing/reopening on another patient rebinds
    (acceptance criterion).
@@ -196,14 +192,12 @@ own contract tests.
   **standalone launch** (`launch/patient` — core prompts patient selection
   at authorize time), so no unbound path survives. Alternative: reserve the
   unbound `user/` path behind an explicitly named, env-gated operator mode.
-- **D2 — client model. SUPERSEDED by the §4.2 blocking constraint** (public
-  clients cannot hold the `user/` scopes the routes require; verified live
-  2026-07-15). Now recommend: **confidential client + PKCE with a server-side
-  code exchange** (D2-confidential). Original recommendation (public + PKCE,
-  browser exchange) is not viable without re-scoping every route to
-  `patient/` context (D2-public-repriced — needs a spike; not recommended).
-  **Founder call needed before the live smoke and the `panel.html` exchange
-  can be finalized.**
+- **D2 — client model. DECIDED: confidential client + PKCE with a server-side
+  code exchange** (founder, 2026-07-15). Forced by the §4.2 constraint (public
+  clients cannot hold the `user/` scopes the routes require; verified live).
+  The alternative — re-scoping every route to `patient/` context — was
+  rejected (deeper in the scope model, needs a spike). Implemented in this
+  wave.
 - **D3 — consent screen on each launch.** Recommend: set
   `oauth_ehr_launch_authorization_flow_skip = 1` (admin config, reversible)
   for the seamless one-click launch. Alternative: keep per-launch consent.
