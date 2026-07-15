@@ -98,7 +98,7 @@ foreach ($report->vendorCostUsd as $vendor => $vendorCost) {
     echo sprintf("    %-20s %.4f\n", $vendor, $vendorCost);
 }
 
-echo "  cost by encounter (USD, correlation id):\n";
-foreach ($report->costUsdByCorrelation as $correlationId => $encounterCost) {
-    echo sprintf("    %-38s %.4f\n", $correlationId, $encounterCost);
+echo "  cost by turn (USD, correlation id — one id per turn):\n";
+foreach ($report->costUsdByCorrelation as $correlationId => $turnCost) {
+    echo sprintf("    %-38s %.4f\n", $correlationId, $turnCost);
 }

@@ -24,5 +24,8 @@ docs {
   unready. Returns HTTP 503 (same JSON shape) if any check fails, 200 if
   all pass. Requires the `user/ready.read` scope and the `patients`/`demo`
   ACL, same as Ping/Health. Run this before Turn/Document if you expect a
-  degraded turn and want to know why ahead of time.
+  degraded turn and want to know why ahead of time. NOTE: today's checks
+  cover the ANSWER path only — evidence turns (ask_evidence=true) also
+  need Cohere (COHERE_API_KEY), which /ready does not yet probe; those
+  per-dependency degraded probes land with TRO-47.
 }

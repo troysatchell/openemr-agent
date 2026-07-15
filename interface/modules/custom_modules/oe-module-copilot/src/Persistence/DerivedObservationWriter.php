@@ -61,7 +61,7 @@ final class DerivedObservationWriter
      * it is what lets a future audit tell which extractor produced a given
      * derived observation.
      */
-    public const EXTRACTOR_VERSION = 'vlm-extractor/1.0';
+    public const EXTRACTOR_VERSION = 'vlm-extractor/1.1';
 
     /**
      * Fallback field path recorded in lineage when an analyte's value

@@ -90,10 +90,27 @@ final class ExtractionLineageSchema
             return;
         }
 
-        QueryUtils::sqlStatementThrowException(
-            'ALTER TABLE ' . self::LINEAGE_TABLE . ' ADD COLUMN bbox VARCHAR(64) NULL',
-            [],
-        );
+        try {
+            QueryUtils::sqlStatementThrowException(
+                'ALTER TABLE ' . self::LINEAGE_TABLE . ' ADD COLUMN bbox VARCHAR(64) NULL',
+                [],
+            );
+        } catch (\Throwable $e) {
+            if (!$e instanceof \Error && !$e instanceof \ErrorException) {
+                // Two concurrent requests can both observe the column as
+                // missing (SHOW + ALTER is not atomic); the loser's
+                // duplicate-column failure is success, not an error.
+                $recheck = QueryUtils::fetchRecords(
+                    'SHOW COLUMNS FROM ' . self::LINEAGE_TABLE . " LIKE 'bbox'",
+                    [],
+                );
+                if ($recheck !== []) {
+                    return;
+                }
+            }
+
+            throw $e;
+        }
     }
 
     private static function sqlFilePath(): string

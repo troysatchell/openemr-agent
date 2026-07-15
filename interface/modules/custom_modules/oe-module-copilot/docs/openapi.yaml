@@ -90,7 +90,8 @@ paths:
         Returns a fixed { "status": "ok" } body once the ACL guard has
         passed. No dependency checks — use /api/copilot/ready for that.
       security:
-        - BearerAuth: [user/ping.read]
+        - BearerAuth: []
+      x-required-scope: user/ping.read
       responses:
         '200':
           description: The module is reachable and the caller is authorized.
@@ -117,7 +118,8 @@ paths:
         only — never a dependency probe (see /ready for that); a
         process that can answer this at all is, by definition, alive.
       security:
-        - BearerAuth: [user/health.read]
+        - BearerAuth: []
+      x-required-scope: user/health.read
       responses:
         '200':
           description: The process is alive and the caller is authorized.
@@ -147,7 +149,8 @@ paths:
         503 (with the same JSON body) when any check fails, 200 when
         all pass.
       security:
-        - BearerAuth: [user/ready.read]
+        - BearerAuth: []
+      x-required-scope: user/ready.read
       responses:
         '200':
           description: All dependency checks passed.
@@ -188,7 +191,8 @@ paths:
         allowed field set — the physician's explicit toggle, never an
         inferred NLP classification of the question.
       security:
-        - BearerAuth: [user/turn.write]
+        - BearerAuth: []
+      x-required-scope: user/turn.write
       requestBody:
         required: true
         content:
@@ -307,7 +311,8 @@ paths:
         field the model cannot ground in a source region is absent, never
         defaulted.
       security:
-        - BearerAuth: [user/document.write]
+        - BearerAuth: []
+      x-required-scope: user/document.write
       requestBody:
         required: true
         content:
@@ -400,7 +405,8 @@ paths:
         refused with the IDENTICAL message a genuinely unknown document
         gets — no enumeration side channel for a cross-patient leak.
       security:
-        - BearerAuth: [user/source.write]
+        - BearerAuth: []
+      x-required-scope: user/source.write
       requestBody:
         required: true
         content:
@@ -622,10 +628,12 @@ components:
           items:
             $ref: '#/components/schemas/UnevaluableItem'
         answer:
-          nullable: true
           description: null exactly when `degraded` is true.
-          allOf:
+          anyOf:
             - $ref: '#/components/schemas/VerifiedAnswer'
+            - type: object
+              nullable: true
+              enum: [null]
       additionalProperties: false
     Finding:
       type: object
@@ -820,15 +828,20 @@ components:
           type: string
           description: The schema field path that is the citation anchor.
         bbox:
+          type: array
           nullable: true
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+            minimum: 0
+            maximum: 1
           description: >-
-            OPTIONAL, ADDITIVE: a source-region bounding box for the
-            cited value, when the extraction pipeline records one.
-            Shape UNVERIFIED as of this writing — being introduced by a
-            parallel change; kept permissive (free-form object) here
-            rather than over-specified.
-          type: object
-          additionalProperties: true
+            OPTIONAL UI affordance: the cited value's source region as
+            [x, y, width, height], normalized 0..1 relative to the page
+            (width/height strictly positive on write). Null when no box
+            was stored — verification rides value + field path, never
+            the box (R-W3).
         document_base64:
           type: string
           nullable: true

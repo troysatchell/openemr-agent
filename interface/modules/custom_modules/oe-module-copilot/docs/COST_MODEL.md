@@ -6,7 +6,7 @@ Cost is attributed per step and projected per behavior, not per token
 `StepRecord` carries the units it consumed plus a versioned unit price
 (`TokenUsage` for the text/vision model, `VendorUnits` for embed/rerank —
 the same pattern, generalized, PS-9). `TraceDashboard` (TRO-45) rolls this up
-per vendor and per encounter (correlation id) straight from the trace — cost
+per vendor and per turn (correlation id — one id per turn today; a stable encounter key is future work) straight from the trace — cost
 is derivable from the trace alone, never recomputed out-of-band.
 
 Every number below is labeled **(MEASURED)** — a committed price constant or
@@ -33,7 +33,7 @@ input tokens/page for the images plus ~1,500 input tokens of schema/prompt
 context (~9,000 input tokens total), ~500 output tokens for the structured
 JSON extraction:
 
-```
+```text
 9,000 / 1,000,000 × $5.00  =  $0.045
   500 / 1,000,000 × $25.00 =  $0.0125
                               --------
@@ -55,7 +55,7 @@ Illustrative per-turn cost **(ASSUMED token profile, MEASURED per-token
 price)**: chart snapshot + question + guideline evidence context ≈ 3,200
 input tokens; a concise grounded answer ≈ 120 output tokens:
 
-```
+```text
 3,200 / 1,000,000 × $5.00  = $0.016
   120 / 1,000,000 × $25.00 = $0.003
                               -------
@@ -174,6 +174,6 @@ implementation, not just a bigger instance of the old one.
 
 As real traces accumulate, `TraceDashboard::summarize()`'s `vendorCostUsd`
 and `costUsdByCorrelation` (TRO-45; `bin/trace-dashboard.php`) report
-*measured* per-vendor and per-encounter cost from the trace alone — replacing
+*measured* per-vendor and per-turn (correlation id) cost from the trace alone — replacing
 the ASSUMED figures above with MEASURED ones is the intended path, not a
 rewrite of this document's structure.

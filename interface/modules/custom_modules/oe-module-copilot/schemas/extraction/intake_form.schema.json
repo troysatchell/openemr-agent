@@ -1,98 +1,171 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://open-emr.org/copilot/schemas/extraction/intake_form.schema.json",
-  "title": "Clinical Co-Pilot intake_form extraction",
-  "description": "Canonical contract for an intake_form source document extraction (W2_ARCHITECTURE.md §3). Mirrors OpenEMR\\Modules\\Copilot\\Extraction\\IntakeFormExtraction; contract tests (TRO-15) assert DTO <-> schema agreement.",
-  "type": "object",
-  "$defs": {
-    "ExtractionConfidence": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1,
-      "description": "Per-field extraction confidence, bounded [0.0, 1.0]."
-    },
-    "SourceCitation": {
-      "type": "object",
-      "description": "The §4 five-field citation contract (snake_case wire names, mirroring OpenEMR\\Modules\\Copilot\\Synthesis\\SourceRef). The three Week 2 fields are always present as keys and null when not applicable.",
-      "properties": {
-        "source_type": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "page_or_section": {
-          "type": ["string", "null"]
-        },
-        "field_or_chunk_id": {
-          "type": ["string", "null"]
-        },
-        "quote_or_value": {
-          "type": ["string", "null"]
-        }
-      },
-      "required": ["source_type", "source_id", "page_or_section", "field_or_chunk_id", "quote_or_value"],
-      "additionalProperties": false
-    },
-    "ExtractedField": {
-      "type": "object",
-      "description": "Present/absent marker (D1): present fields carry value + confidence + citation; absent fields carry none.",
-      "properties": {
-        "isPresent": {
-          "type": "boolean"
-        },
-        "value": {
-          "type": ["string", "null"]
-        },
-        "confidence": {
-          "oneOf": [
-            { "$ref": "#/$defs/ExtractionConfidence" },
-            { "type": "null" }
-          ]
-        },
-        "citation": {
-          "oneOf": [
-            { "$ref": "#/$defs/SourceCitation" },
-            { "type": "null" }
-          ]
-        },
-        "bbox": {
-          "type": ["array", "null"],
-          "items": { "type": "number", "minimum": 0, "maximum": 1 },
-          "minItems": 4,
-          "maxItems": 4,
-          "description": "Optional UI-only page-region hint [x, y, width, height], normalized 0..1 relative to the page (TRO-44). Never verification ground; omitted or null when the model cannot ground a region."
-        }
-      },
-      "required": ["isPresent", "value", "confidence", "citation"],
-      "additionalProperties": false
-    }
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://open-emr.org/copilot/schemas/extraction/intake_form.schema.json",
+ "title": "Clinical Co-Pilot intake_form extraction",
+ "description": "Canonical contract for an intake_form source document extraction (W2_ARCHITECTURE.md \u00a73). Mirrors OpenEMR\\Modules\\Copilot\\Extraction\\IntakeFormExtraction; contract tests (TRO-15) assert DTO <-> schema agreement.",
+ "type": "object",
+ "$defs": {
+  "ExtractionConfidence": {
+   "type": "number",
+   "minimum": 0,
+   "maximum": 1,
+   "description": "Per-field extraction confidence, bounded [0.0, 1.0]."
   },
-  "properties": {
-    "documentId": {
-      "type": "string",
-      "minLength": 1
+  "SourceCitation": {
+   "type": "object",
+   "description": "The \u00a74 five-field citation contract (snake_case wire names, mirroring OpenEMR\\Modules\\Copilot\\Synthesis\\SourceRef). The three Week 2 fields are always present as keys and null when not applicable.",
+   "properties": {
+    "source_type": {
+     "type": "string",
+     "minLength": 1
     },
-    "chiefConcern": { "$ref": "#/$defs/ExtractedField" },
-    "currentMedications": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/ExtractedField" }
+    "source_id": {
+     "type": "string",
+     "minLength": 1
     },
-    "allergies": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/ExtractedField" }
+    "page_or_section": {
+     "type": [
+      "string",
+      "null"
+     ]
     },
-    "familyHistory": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/ExtractedField" }
+    "field_or_chunk_id": {
+     "type": [
+      "string",
+      "null"
+     ]
     },
-    "demographics": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/ExtractedField" }
+    "quote_or_value": {
+     "type": [
+      "string",
+      "null"
+     ]
     }
+   },
+   "required": [
+    "source_type",
+    "source_id",
+    "page_or_section",
+    "field_or_chunk_id",
+    "quote_or_value"
+   ],
+   "additionalProperties": false
   },
-  "required": ["documentId", "chiefConcern", "currentMedications", "allergies", "familyHistory", "demographics"],
-  "additionalProperties": false
+  "ExtractedField": {
+   "type": "object",
+   "description": "Present/absent marker (D1): present fields carry value + confidence + citation; absent fields carry none.",
+   "properties": {
+    "isPresent": {
+     "type": "boolean"
+    },
+    "value": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "confidence": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/ExtractionConfidence"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "citation": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/SourceCitation"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "bbox": {
+     "type": [
+      "array",
+      "null"
+     ],
+     "prefixItems": [
+      {
+       "type": "number",
+       "minimum": 0,
+       "maximum": 1
+      },
+      {
+       "type": "number",
+       "minimum": 0,
+       "maximum": 1
+      },
+      {
+       "type": "number",
+       "exclusiveMinimum": 0,
+       "maximum": 1
+      },
+      {
+       "type": "number",
+       "exclusiveMinimum": 0,
+       "maximum": 1
+      }
+     ],
+     "items": false,
+     "minItems": 4,
+     "maxItems": 4,
+     "description": "Optional UI-only page-region hint [x, y, width, height], normalized 0..1 relative to the page, width/height strictly positive to match BoundingBox (TRO-44). Never verification ground; omitted or null when the model cannot ground a region."
+    }
+   },
+   "required": [
+    "isPresent",
+    "value",
+    "confidence",
+    "citation"
+   ],
+   "additionalProperties": false
+  }
+ },
+ "properties": {
+  "documentId": {
+   "type": "string",
+   "minLength": 1
+  },
+  "chiefConcern": {
+   "$ref": "#/$defs/ExtractedField"
+  },
+  "currentMedications": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/ExtractedField"
+   }
+  },
+  "allergies": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/ExtractedField"
+   }
+  },
+  "familyHistory": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/ExtractedField"
+   }
+  },
+  "demographics": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/ExtractedField"
+   }
+  }
+ },
+ "required": [
+  "documentId",
+  "chiefConcern",
+  "currentMedications",
+  "allergies",
+  "familyHistory",
+  "demographics"
+ ],
+ "additionalProperties": false
 }

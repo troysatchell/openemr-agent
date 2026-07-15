@@ -268,7 +268,9 @@ async function renderDocumentPreview(preview, container) {
 
   try {
     const data = base64ToUint8Array(preview.document_base64);
-    const pdf = await pdfjsLib.getDocument({ data: data }).promise;
+    // isEvalSupported:false — CVE-2024-4367 mitigation for pdf.js 3.x: never
+    // let a malicious PDF's font programs evaluate as JavaScript.
+    const pdf = await pdfjsLib.getDocument({ data: data, isEvalSupported: false }).promise;
     const requestedPage = parseInt(preview.page, 10);
     const pageNumber = Math.min(Math.max(Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1, 1), pdf.numPages);
     const page = await pdf.getPage(pageNumber);

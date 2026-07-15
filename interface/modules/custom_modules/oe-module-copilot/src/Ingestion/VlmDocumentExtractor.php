@@ -178,12 +178,13 @@ final readonly class VlmDocumentExtractor
             When a value is absent: isPresent=false, value=null, confidence=null,
             citation=null. Never guess or default a value.
 
-            A present field MAY also carry an OPTIONAL "bbox" key: the exact
-            region the value was read from, as [x, y, width, height], each
-            number normalized 0.0-1.0 relative to the page's width/height
-            (top-left origin). Omit "bbox" entirely whenever you are not
-            confident of the exact region — omitting it is fine, and is
-            strongly preferred over guessing a box.
+            A present "value" field MAY also carry an OPTIONAL "bbox" key
+            (only "value" fields — never testName/unit/other fields, whose
+            boxes are not stored): the exact region the value was read from,
+            as [x, y, width, height], each number normalized 0.0-1.0 relative
+            to the page's width/height (top-left origin). Omit "bbox"
+            entirely whenever you are not confident of the exact region —
+            omitting it is fine, and is strongly preferred over guessing a box.
             PROMPT;
         $shared = sprintf($shared, $docType);
 
