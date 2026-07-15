@@ -86,6 +86,12 @@ final class AuthorizeRedirect
             'code_challenge_method' => 'S256',
         ]);
 
-        return $authorizeEndpoint . '?' . $query;
+        // An authorize endpoint may already carry a query component (e.g. a
+        // multi-tenant `.../authorize?tenant=default`); appending '?' there
+        // would fold our OAuth params into that value and the server would
+        // never see them. Join with '&' when a query is already present.
+        $separator = str_contains($authorizeEndpoint, '?') ? '&' : '?';
+
+        return $authorizeEndpoint . $separator . $query;
     }
 }

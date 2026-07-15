@@ -36,6 +36,7 @@
 
 declare(strict_types=1);
 
+use OpenEMR\BC\ServiceContainer;
 use OpenEMR\FHIR\Config\ServerConfig;
 use OpenEMR\Modules\Copilot\Panel\SmartLaunch\AuthorizeRedirect;
 use OpenEMR\Modules\Copilot\Panel\SmartLaunch\IssuerMismatchException;
@@ -100,9 +101,14 @@ try {
         $state,
         $pair->challenge,
     );
-} catch (IssuerMismatchException) {
+} catch (IssuerMismatchException $e) {
+    // Issuer mismatch is a security-relevant signal (a launch pointed at a
+    // foreign authorization server) — record it server-side for audit; the
+    // user still sees only the fixed generic page (R11, never $e->getMessage).
+    ServiceContainer::getLogger()->warning('copilot SMART launch rejected: issuer mismatch', ['exception' => $e]);
     $fail(400, 'This launch request could not be verified against this server. Please relaunch from the patient chart.');
-} catch (\InvalidArgumentException) {
+} catch (\InvalidArgumentException $e) {
+    ServiceContainer::getLogger()->warning('copilot SMART launch rejected: malformed launch parameters', ['exception' => $e]);
     $fail(400, 'This launch request is malformed. Please relaunch from the patient chart.');
 }
 
@@ -122,7 +128,8 @@ $jsonFlags = JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP;
 try {
     $handshakeStateJson = json_encode($handshakeState, JSON_THROW_ON_ERROR | $jsonFlags);
     $authorizeUrlJson = json_encode($authorizeUrl, JSON_THROW_ON_ERROR | $jsonFlags);
-} catch (\JsonException) {
+} catch (\JsonException $e) {
+    ServiceContainer::getLogger()->error('copilot SMART launch failed: handshake state encoding error', ['exception' => $e]);
     $fail(400, 'This launch request could not be processed. Please relaunch from the patient chart.');
 }
 
