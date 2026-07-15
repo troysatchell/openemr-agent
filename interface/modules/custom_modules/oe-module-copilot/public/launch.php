@@ -37,6 +37,7 @@
 declare(strict_types=1);
 
 use OpenEMR\BC\ServiceContainer;
+use OpenEMR\Common\Session\SessionWrapperFactory;
 use OpenEMR\FHIR\Config\ServerConfig;
 use OpenEMR\Modules\Copilot\Panel\SmartLaunch\AuthorizeRedirect;
 use OpenEMR\Modules\Copilot\Panel\SmartLaunch\IssuerMismatchException;
@@ -118,7 +119,12 @@ try {
 // back — keyed to this same session — and clears them once the code is
 // exchanged (single use). redirect_uri is stored too so the exchange sends
 // the identical value the authorize request used (OAuth requires the match).
-SmartLaunchSession::store($pair->verifier, $state, $redirectUri);
+SmartLaunchSession::store(
+    SessionWrapperFactory::getInstance()->getActiveSession(),
+    $pair->verifier,
+    $state,
+    $redirectUri,
+);
 
 // Plain server-side redirect — the browser only needs to reach the authorize
 // endpoint; nothing secret rides the URL (the challenge is public, the

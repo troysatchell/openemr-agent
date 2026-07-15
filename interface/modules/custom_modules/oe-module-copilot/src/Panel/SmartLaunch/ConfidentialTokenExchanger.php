@@ -26,6 +26,8 @@ declare(strict_types=1);
 
 namespace OpenEMR\Modules\Copilot\Panel\SmartLaunch;
 
+use GuzzleHttp\ClientInterface;
+
 final class ConfidentialTokenExchanger
 {
     /**
@@ -33,6 +35,11 @@ final class ConfidentialTokenExchanger
      * `[httpStatus, decodedBody]`; the caller decides what a non-2xx or a
      * body without an `access_token` means (always a generic failure — token
      * responses carry OAuth error details that must not reach the user).
+     *
+     * The HTTP client is injectable for testing/substitution; the default is a
+     * real Guzzle client with `http_errors` disabled so a non-2xx token
+     * response comes back as an ordinary `[status, body]` pair rather than a
+     * Guzzle exception (mirrors {@see \OpenEMR\Modules\Copilot\Rag\CohereHttpTransport}).
      *
      * @return array{int, array<string, mixed>}
      */
@@ -43,14 +50,15 @@ final class ConfidentialTokenExchanger
         string $code,
         string $redirectUri,
         string $codeVerifier,
+        ?ClientInterface $httpClient = null,
     ): array {
-        $httpClient = new \GuzzleHttp\Client([
+        $httpClient ??= new \GuzzleHttp\Client([
             'timeout' => 30,
             'connect_timeout' => 5,
             'http_errors' => false,
         ]);
 
-        $response = $httpClient->post($tokenEndpoint, [
+        $response = $httpClient->request('POST', $tokenEndpoint, [
             'headers' => ['content-type' => 'application/x-www-form-urlencoded'],
             'form_params' => [
                 'grant_type' => 'authorization_code',

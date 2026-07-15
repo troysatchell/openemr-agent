@@ -41,6 +41,10 @@ use OpenEMR\Modules\Copilot\Panel\SmartLaunch\SmartLaunchSession;
 require_once __DIR__ . '/../../../../globals.php';
 
 header('Content-Type: application/json');
+// This endpoint returns a bearer token — no store or intermediary may cache
+// it (CodeRabbit SMART-003). Set before any success OR failure response.
+header('Cache-Control: no-store');
+header('Pragma: no-cache');
 
 /**
  * Emit a generic JSON error and terminate. Never echoes exception messages or
