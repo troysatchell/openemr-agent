@@ -2,7 +2,9 @@
 
 /**
  * Result of running a ReadinessCheck (T17; Early Submission observability
- * requirement; AUDIT S5).
+ * requirement; AUDIT S5; tri-state statuses TRO-47, W2_ARCHITECTURE.md §8:
+ * "`/ready` grows document-storage, vector-index, and reranker probes and
+ * returns per-dependency degraded status rather than binary up/down.").
  *
  * Names each probe's outcome so an operator can see WHAT is down, not just
  * that something is.
@@ -21,11 +23,15 @@ namespace OpenEMR\Modules\Copilot\Observability;
 final readonly class ReadinessReport
 {
     /**
-     * @param array<string, bool> $checks probe name => passed
+     * @param array<string, bool> $checks probe name => passed (backward-compatible
+     *        boolean view; a 'degraded' status counts as passing here — it is
+     *        a warning with a name, not an outage)
+     * @param array<string, string> $statuses probe name => 'ok' | 'degraded' | 'failed'
      */
     public function __construct(
         public bool $ready,
         public array $checks,
+        public array $statuses = [],
     ) {
     }
 }

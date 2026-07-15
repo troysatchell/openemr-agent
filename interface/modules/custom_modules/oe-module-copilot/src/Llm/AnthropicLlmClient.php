@@ -29,6 +29,20 @@
  * into a thrown message (AUDIT: never expose internals in user-facing
  * output) — the original throwable, if any, rides on getPrevious() only.
  *
+ * Resilience (TRO-47; W2_ARCHITECTURE.md §8; PS-12): an optional trailing
+ * {@see CircuitBreaker} constructor argument (additive — pre-existing call
+ * sites keep working unchanged, breakerless). When supplied and open,
+ * `complete()` fails immediately with {@see LlmUnavailableException} naming
+ * the open dependency WITHOUT invoking the transport (R11: degrade
+ * honestly, never hang on a vendor already known to be down). A
+ * transport-level `\Throwable` is retried exactly once (two attempts total)
+ * before surfacing the typed exception — bounded retry, never an unbounded
+ * loop — and each failing attempt feeds the breaker; a call that ultimately
+ * succeeds (including a recovered retry) feeds it a success. Non-200
+ * responses, refusals, and unparseable/malformed output are unchanged by
+ * this: they are neither retried nor fed to the breaker, matching the
+ * pre-existing failure mapping below exactly.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -41,6 +55,7 @@ declare(strict_types=1);
 namespace OpenEMR\Modules\Copilot\Llm;
 
 use OpenEMR\Modules\Copilot\Observability\TokenUsage;
+use OpenEMR\Modules\Copilot\Resilience\CircuitBreaker;
 use OpenEMR\Modules\Copilot\Verification\DraftClaim;
 
 final class AnthropicLlmClient implements LlmClient
@@ -54,6 +69,9 @@ final class AnthropicLlmClient implements LlmClient
     public const DEFAULT_MODEL = 'claude-opus-4-8';
 
     private const MAX_TOKENS = 2048;
+
+    /** Bounded retry (TRO-47): one retry on a transport-level fault, two attempts total. */
+    private const MAX_TRANSPORT_ATTEMPTS = 2;
 
     private const SYSTEM_PROMPT = <<<'PROMPT'
         You are a clinical co-pilot drafting an answer STRICTLY AND ONLY from
@@ -88,6 +106,7 @@ final class AnthropicLlmClient implements LlmClient
         private readonly string $modelId = self::DEFAULT_MODEL,
         private readonly float $inputPricePerMTokUsd = 5.0,
         private readonly float $outputPricePerMTokUsd = 25.0,
+        private readonly ?CircuitBreaker $breaker = null,
     ) {
         if (trim($this->modelId) === '') {
             throw new \DomainException('AnthropicLlmClient modelId must be non-blank');
@@ -121,6 +140,7 @@ final class AnthropicLlmClient implements LlmClient
         float $inputPricePerMTokUsd = 5.0,
         float $outputPricePerMTokUsd = 25.0,
         string $baseUrl = 'https://api.anthropic.com',
+        ?CircuitBreaker $breaker = null,
     ): self {
         if (trim($apiKey) === '') {
             throw new \DomainException('AnthropicLlmClient::forAnthropicApi requires a non-blank API key');
@@ -151,11 +171,17 @@ final class AnthropicLlmClient implements LlmClient
             return [$response->getStatusCode(), $decoded];
         };
 
-        return new self($transport, $modelId, $inputPricePerMTokUsd, $outputPricePerMTokUsd);
+        return new self($transport, $modelId, $inputPricePerMTokUsd, $outputPricePerMTokUsd, $breaker);
     }
 
     public function complete(LlmTurnRequest $request): LlmTurnResponse
     {
+        if ($this->breaker !== null && !$this->breaker->allows()) {
+            throw new LlmUnavailableException(
+                sprintf('The language-model endpoint is unavailable — the "%s" circuit breaker is open', $this->breaker->dependency()),
+            );
+        }
+
         $requestBody = [
             'model' => $this->modelId,
             'max_tokens' => self::MAX_TOKENS,
@@ -208,7 +234,7 @@ final class AnthropicLlmClient implements LlmClient
         ];
 
         try {
-            [$status, $body] = ($this->transport)($requestBody);
+            [$status, $body] = $this->invokeTransport($requestBody);
         } catch (\Throwable $e) {
             throw new LlmUnavailableException(
                 'The language-model endpoint could not be reached',
@@ -232,7 +258,39 @@ final class AnthropicLlmClient implements LlmClient
             );
         }
 
-        return $this->parseSuccessBody($body);
+        $response = $this->parseSuccessBody($body);
+        $this->breaker?->recordSuccess();
+
+        return $response;
+    }
+
+    /**
+     * Invokes the transport with bounded retry (TRO-47): a transport-level
+     * `\Throwable` is retried exactly once (two attempts total), feeding the
+     * breaker (when present) on each failing attempt, before the original
+     * throwable is rethrown to the caller's own failure mapping. Recursive
+     * rather than looped so the sanctioned "early-return inside a guard,
+     * then an unconditional throw" shape holds structurally — this project's
+     * forbidden-catch-type rule requires a `\Throwable` catch to end in an
+     * unconditional throw.
+     *
+     * @param array<string, mixed> $requestBody
+     *
+     * @return array{int, array<string, mixed>}
+     */
+    private function invokeTransport(array $requestBody, int $attempt = 1): array
+    {
+        try {
+            return ($this->transport)($requestBody);
+        } catch (\Throwable $e) {
+            $this->breaker?->recordFailure();
+
+            if ($attempt < self::MAX_TRANSPORT_ATTEMPTS) {
+                return $this->invokeTransport($requestBody, $attempt + 1);
+            }
+
+            throw $e;
+        }
     }
 
     /**
