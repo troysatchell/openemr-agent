@@ -276,7 +276,12 @@ no-added-click-without-payback rule applies to verification too.
   they appear in the UC1 snapshot and flow into the UC4 must-not-miss rules
   (a panic value in a scan is still a panic value), each carrying a citation
   into the source page; one click shows the exact region of the document the
-  value came from.
+  value came from. **As-built note (2026-07-15):** that click-to-source bbox
+  overlay ships today in the module's standalone, Bearer-token demo panel
+  (`public/panel.html`, TRO-44) — the in-EMR session panel he'd actually use
+  mid-visit (`public/index.php`, TRO-54) has the upload flow but not yet the
+  overlay, so the "one motion, in the room" trust mechanism this use case
+  depends on is not yet available where he'd need it.
 - **Why an agent:** the facts are **trapped in pixels — no dashboard can
   display what was never structured**, so extraction is the enabling step,
   not the feature. The *use* is conversational: "is that potassium from the
@@ -395,11 +400,21 @@ trusting it — and what would make him recommend it to a partner.
   source of the reason-for-visit.
 - **Front desk / scanning MA *(Week 2)*** — the person who scans and uploads
   the intake form and outside results. With document ingestion (UC6) they
-  become the module's **first non-physician user surface** (upload +
-  associate-to-patient) — a workflow user, never a reader of the agent's
-  clinical output. Their unglamorous constraint shapes UC6 more than Ellis's
-  does: if upload is fussier than the paper inbox, the documents never enter
-  the system and UC6 starves.
+  are *envisioned* as the module's **first non-physician user surface**
+  (upload + associate-to-patient) — a workflow user, never a reader of the
+  agent's clinical output. **As-built gap (2026-07-15, not yet closed):**
+  today's upload path requires the same `patients`/`med` ACL as the
+  physician's clinical turn/source routes — both the guarded REST route
+  (`POST /api/copilot/document` in
+  `interface/modules/custom_modules/oe-module-copilot/src/Bootstrap.php`)
+  and the in-EMR session panel (`public/index.php`'s
+  `AclMain::aclCheckCore('patients', 'med')` gate) — so a front-desk MA
+  without physician-level chart access cannot use it yet; no separate,
+  narrower role has been carved out. Their unglamorous constraint still
+  shapes UC6 more than Ellis's does: if upload is fussier than the paper
+  inbox, the documents never enter the system and UC6 starves — and a
+  same-ACL-as-physician gate is one more way it could end up fussier than
+  intended.
 - **The patient** — not a user, but the party every salience decision acts on.
 - **The buyer** — likely **not Ellis** (admin, medical director/CMIO, or owner),
   with different priorities (throughput, liability, quality, compliance). **Needs
@@ -423,7 +438,14 @@ trusting it — and what would make him recommend it to a partner.
    information arrives as scans/PDFs/faxes rather than structured data — who
    uploads it today, how long it sits unread, and whether the practice *has*
    agreed protocols in writing for UC7 to retrieve (if not, the "practice's
-   own guidance" corpus is a fiction and UC7 changes shape).
+   own guidance" corpus is a fiction and UC7 changes shape). **As-built note
+   (2026-07-15):** the committed corpus
+   (`interface/modules/custom_modules/oe-module-copilot/corpus/`, 7
+   documents / 33 chunks — HTN, T2DM, lipids, AF anticoagulation, critical
+   values, plus verbatim USPSTF statements) is an *authored stand-in* built
+   for this project, traceable to national guidelines (`derived_from`) but
+   not sourced from any real practice's own written protocols — this open
+   question is unchanged by its existence.
 
 ---
 

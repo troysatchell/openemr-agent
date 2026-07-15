@@ -10,9 +10,16 @@
 > (the document-shaped week), added 2026-07-13 with the same
 > founder-hypothesis epistemic status as the rest of the persona.
 >
-> **Status: forward-looking.** Nothing in this document is implemented yet.
-> Sections marked *(as-built)* will be filled in as each stage lands; where
-> this document and the code disagree, the code wins — update this doc.
+> **Status: substantially as-built (reconciled 2026-07-15, TRO-49).** Stages
+> 0–4 of §13 (schemas, VLM ingestion, hybrid RAG + rerank, supervisor/worker
+> routing), stage 5 (the 50-case eval gate, §7), and stage 6 (UI, dashboard,
+> OpenAPI + Bruno, and — landing in the course of this same reconciliation —
+> Wave M resilience, TRO-47: circuit breakers, bounded retry, tri-state
+> `/ready`, `docs/SLOS.md`) are shipped in
+> `interface/modules/custom_modules/oe-module-copilot/`. Sections below are
+> annotated where the as-built detail materially diverges from the original
+> plan; where this document and the code disagree, the code wins — update
+> this doc.
 
 ## Executive Summary
 
@@ -66,10 +73,15 @@ API access, and the golden set is reproducible from the repo alone.
 
 **Tradeoffs accepted:** PHP-native orchestration instead of LangGraph (we own
 a small state machine; in exchange the graph is fully inspectable and testable
-in the isolated suite); bounding boxes may require rendering PDF pages to
-images for reliable coordinates (latency cost on ingest, paid once per
-document, not per question); MariaDB vectors over a dedicated vector DB (fine
-at guideline-corpus scale, revisit at hospital scale).
+in the isolated suite); MariaDB vectors over a dedicated vector DB (fine
+at guideline-corpus scale, revisit at hospital scale). **As-built
+correction:** the anticipated bounding-box tradeoff did not materialize —
+the VLM returns a per-field normalized `bbox` directly in its extraction
+JSON at no separate ingest cost (`VlmDocumentExtractor.php`'s prompt
+requests it inline; `BoundingBox::fromWire()` parses it, degrading to
+`null` rather than rejecting the field on a malformed box, R-W3); page-image
+rendering happens client-side, at click-to-source time, via the vendored
+PDF.js (§4), not at ingest.
 
 ## 1. Scope and the write amendment
 
@@ -104,7 +116,15 @@ module route (`POST /api/copilot/document`), never a bare upload endpoint.
 
 1. **Authorize** — same default-deny wrapper as every module route
    (`GuardedRouteRegistrar`); principal is the authenticated physician (S4/S5
-   posture unchanged).
+   posture unchanged). **Known v1 baseline, deliberate (TRO-51 epic,
+   deferred):** authorization rides physician-wide `user/*` OAuth2 scopes
+   (e.g. `user/document.write`, `user/turn.write` —
+   `Bootstrap::registerApiScopes()`) plus a free-form `patient_uuid` on each
+   call, not a SMART-on-FHIR patient-launch context bound to one patient.
+   This is the same posture Week 1 shipped with, carried forward unchanged
+   into Week 2's two writes; narrowing to patient-launch scoping is tracked
+   as a fast-follow, not a Week 2 blocker, and it touches the FHIR/OAuth2
+   surface (a danger zone), so it stays out of scope for casual change.
 2. **Attach** — store the source file as a native OpenEMR patient document via
    `DocumentService` (the same storage the rest of the EMR reads), under a
    dedicated co-pilot document category. **Dedupe by content hash** before
@@ -167,6 +187,28 @@ module route (`POST /api/copilot/document`), never a bare upload endpoint.
    - Every derived record carries the source document id + page + region
      (lineage, §10). Re-extraction versions the derived set; it never
      silently overwrites (data authority, §10).
+   - **As-built naming fix (TRO-56).** Core's
+     `FhirObservationLaboratoryService::parseOpenEMRRecord()` only emits a
+     non-null-flavor `Observation.code` when BOTH `result_code` and
+     `result_text` are non-empty
+     (`src/Services/FHIR/Observation/FhirObservationLaboratoryService.php:251`)
+     — a derived row's honest `result_code = ''` (no code exists on the
+     extraction wire, and inventing one would be a fabrication) meant the
+     recorded test name was dropped entirely behind the null-flavor UNK
+     placeholder. Fixed module-side only: `NamedLaboratoryObservationService`
+     (`interface/modules/custom_modules/oe-module-copilot/src/Chart/NamedLaboratoryObservationService.php`)
+     subclasses the core service to carry `result_text` across as
+     `CodeableConcept.text` on the module's own read path, inventing no
+     code — the null-flavor UNK coding stays exactly as core produces it;
+     `OpenEmrFhirServiceFactory` swaps the subclass in for the laboratory
+     sub-service via the existing `getMappedServices()`/`setMappedServices()`
+     seam, no core logic edited. One core comment/docblock clarification
+     accompanied the fix (commit `0b7a556`, founder-ratified): a one-line
+     `@return` docblock correction plus three retired PHPStan baseline
+     entries — verified comment-only, zero runtime or certification-surface
+     effect; core's fallback *logic* at that line is unchanged.
+     Pinned by a frozen, DB-backed acceptance test
+     (`tests/Tests/Services/Copilot/DerivedObservationNamingRoundTripTest.php`).
 6. **Trace** — every step is a `StepRecord` under the turn's correlation ID:
    ingestion start/complete, per-field extraction outcome, persistence
    outcome. The trace stays PHI-free: field names and outcomes, never values.
@@ -190,6 +232,17 @@ a migration note in this file (§13).
   inferred.
 - **`intake_form`** — demographics fields, chief concern, current medications,
   allergies, family history, source citation per field group.
+- **As-built (TRO-44):** both schemas carry an OPTIONAL per-field `bbox` —
+  `[x, y, width, height]` normalized to the source page, requested inline in
+  the extraction prompt and parsed by `BoundingBox::fromWire()`
+  (`schemas/extraction/lab_pdf.schema.json`,
+  `schemas/extraction/intake_form.schema.json`). A malformed or absent box
+  degrades to `null` rather than failing the field — it is a UI affordance
+  for the click-to-source overlay (§4), never verification ground (R-W3).
+  Persisted lineage currently carries `bbox` for `lab_pdf` derived
+  observations only (`ExtractionLineageSchema`'s
+  `mod_copilot_extraction_lineage.bbox` column); `intake_form` candidates do
+  not yet persist a box (out of TRO-44's ticketed scope).
 - **Injection is a two-surface problem here, and the Week 1 rule covered
   neither.** Week 1 protects the *answer* model from chart content; Week 2
   adds (a) an upstream model call — the extraction VLM ingests raw pixels
@@ -257,10 +310,23 @@ Shipped as a golden-set case (source deleted, derived record present, claim
 must come back ungrounded — §7), because an invariant asserted in prose and
 an invariant a grader can break are different things.
 
-**UI:** click a citation → document preview at the cited page with the
-bounding-box overlay for that field (pdf page rendered to image; overlay
-positioned from stored coordinates). Lives in the existing session panel
-(`public/panel.html` + `ajax.php`), behind the same SessionGate.
+**UI (as-built, TRO-44):** click a citation → `POST /api/copilot/source`
+re-resolves the token live and returns a `document`-variant preview
+(`document_base64` + `document_mime` + the stored `bbox`, when present).
+Vendored PDF.js (`public/vendor/pdfjs/`, no CDN — see its `VERSION.md`)
+renders the cited page to a canvas and, when `bbox` is non-null, positions a
+`.bbox-overlay` div over the exact normalized region; a null `bbox` renders
+the page with no overlay, honestly, rather than guessing one (R-W3). Per the
+CVE-2024-4367 mitigation for pdf.js 3.x (arbitrary JS execution via a
+malicious font under `eval`-based font rendering), the document is loaded
+with `isEvalSupported: false` (`public/panel.html`). **Two distinct panels,
+not one:** the overlay ships today in `public/panel.html` — a
+self-contained, Bearer-token REST API-consumer panel talking directly to the
+guarded `/api/copilot/*` routes (no `ajax.php`, no `SessionGate`). The true
+in-EMR, `SessionGate`-gated session panel (`public/index.php` + `ajax.php`,
+T21) has the document-upload flow (TRO-54, below) but does not yet carry the
+click-to-source bbox overlay — a known gap between the two surfaces, not
+(yet) unified.
 
 ## 5. Hybrid RAG + rerank
 
@@ -477,12 +543,21 @@ no parallel convention:
   rate + confidence distribution, retrieval hit rate, routing decision
   counts, per-worker latency, eval pass/fail per rubric category — all on the
   existing dashboard.
-- **Cost is attributed per step and projected per behavior, not per token.**
-  Four vendor price models now coexist (vision, text, embed, rerank — vision
-  dominates). Attribution rides the Week 1 substrate: every vendor call's
-  `StepRecord` carries units consumed + a versioned unit price (the
-  `TokenUsage` pattern generalized), rolled up per encounter by correlation
-  ID and per vendor on the dashboard. **Projection separates the two scaling
+- **Cost is attributed per step and projected per behavior, not per token
+  (as-built, TRO-45/TRO-46).** Four vendor price models now coexist (vision,
+  text, embed, rerank — vision dominates). Attribution rides the Week 1
+  substrate: every vendor call's `StepRecord` carries units consumed + a
+  versioned unit price — `TokenUsage` for the text/vision (Anthropic) model,
+  the new `VendorUnits` value object (`src/Observability/VendorUnits.php`)
+  generalizing the same pattern for Cohere embed/rerank — rolled up **per
+  turn** by correlation ID and per vendor on the dashboard
+  (`TraceDashboard::summarize()`'s `vendorCostUsd` / `costUsdByCorrelation`,
+  `bin/trace-dashboard.php`). **Known deviation:** correlation ID is minted
+  one-per-turn today, not one-per-encounter — a stable encounter key that
+  would let cost roll up across a visit's several turns is still future
+  work (`docs/COST_MODEL.md`, TRO-45). Full attribution methodology,
+  measured-vs-assumed labeling, and the four projection tiers are committed
+  in `docs/COST_MODEL.md` (TRO-46). **Projection separates the two scaling
   curves:** extraction is per-*document* (amortized per visit, ~linear in
   patient volume); retrieval + answer is per-*question*, and
   questions-per-encounter is a behavioral variable that grows as trust grows
@@ -491,18 +566,54 @@ no parallel convention:
   cache, batched extraction, in-house rerank at the top tiers). A projection
   without the stated behavioral assumption is the token-multiplication the
   spec rejects.
-- **SLOs:** document ingestion p95 and evidence retrieval p95 targets set
-  from measured baselines once the flows exist (recorded here as-built —
-  invented numbers are worse than none), then alarmed: extraction failure
-  rate, RAG retrieval latency, eval regression (>5% category drop).
-- **Resilience:** every outbound LLM/VLM/embed/rerank call has a timeout and
-  bounded retry; repeated failures trip a per-dependency circuit breaker that
-  degrades the turn honestly (Week 1's R11 posture) instead of hanging it.
-- **`/ready`** grows document-storage, vector-index, and reranker probes and
-  returns per-dependency **degraded** status rather than binary up/down.
-- **API surface:** OpenAPI 3.0 spec for all module endpoints, committed and
-  contract-tested against the implementation; a runnable Bruno collection
-  covers Week 1 + Week 2 flows (closing the Week 1 collection debt).
+- **SLOs (as-built, TRO-47).** `docs/SLOS.md` carries named p95 targets
+  (document ingestion, evidence retrieval) and alarm conditions (extraction
+  failure rate, RAG retrieval latency, eval regression >5%), with every
+  number labeled `MEASURED` (a dashboard-derivation mechanism or a committed
+  code constant) or `PENDING MEASUREMENT` (no production volume exists yet
+  to set a baseline against — mirrors `docs/COST_MODEL.md`'s honesty-ledger
+  convention). Both p95 targets and both volume-dependent alarm thresholds
+  are currently `PENDING MEASUREMENT`; the eval-regression threshold (5%) is
+  the one `MEASURED` policy constant, read from the comparator
+  (`GoldenSetGateTest`), not a load figure.
+- **Resilience (as-built, TRO-47).** A clock-driven `CircuitBreaker`
+  (`src/Resilience/CircuitBreaker.php`; closed → open after N consecutive
+  failures, half-open probe after cooldown, PSR-20 `ClockInterface`-driven
+  so tests never sleep) and bounded retry (one retry on a transport-level
+  `\Throwable`, two attempts total; a non-200 or unparseable response is
+  neither retried nor fed to the breaker) are wired at `Bootstrap.php`'s
+  composition root into all three live vendor clients —
+  `anthropic-llm` (turn-path answer model), `cohere-embed`, `cohere-rerank`
+  — each at 3 consecutive failures / 60s cooldown
+  (`Bootstrap::BREAKER_FAILURE_THRESHOLD`/`BREAKER_COOLDOWN_SECONDS`,
+  committed defaults, not yet tuned against production data). An open
+  breaker fails the call with the client's own typed unavailability
+  exception, before the transport is invoked (Week 1's R11 posture).
+  **Known limitation, named not hidden (`docs/SLOS.md` §3):** each breaker
+  is constructed fresh per PHP request — no persistent cross-request store
+  (APCu/Redis/DB row) — so as wired today it protects a single in-flight
+  request's own retries, not the whole deployment against a sustained
+  vendor outage; genuine cross-request breaking needs a persistent state
+  store, out of TRO-47's scope.
+- **`/ready` (as-built, TRO-47).** Tri-state per probe —
+  `ReadinessReport::$statuses`: `'ok'` / `'degraded'` / `'failed'`; only
+  `'failed'` trips the 503, `'degraded'` names itself without failing
+  overall readiness (PS-12's "worse results beat no results, but never
+  silently"). Six probes today: the Week 1 three (`db`, `trace_sink`, `llm`
+  — config-presence only) plus three Week 2 additions —
+  `document-storage` and `vector-index` (cheap `SHOW TABLES LIKE` metadata
+  checks, `ok`/`failed` only) and `reranker` (`COHERE_API_KEY` presence:
+  `ok` when configured, `degraded` — never `failed` — when absent, so a
+  missing optional vendor key never takes the whole panel offline).
+- **API surface (as-built, TRO-48):** OpenAPI 3.0 spec
+  (`docs/openapi.yaml`) for every module endpoint, contract-tested against
+  the implementation in both directions — routes parsed from
+  `Bootstrap.php`'s `register('METHOD /path', ...)` literals (the single
+  route source, S5) must match the spec's `paths`, and vice versa
+  (`tests/Tests/Isolated/Copilot/Api/OpenApiContractTest.php`, isolated
+  lane, no database). A runnable Bruno collection (`bruno/`, six requests —
+  ping, health, ready, turn, document upload, source-resolve) covers Week 1
+  + Week 2 flows, closing the Week 1 collection debt.
 
 ## 9. Failure modes and recovery
 
@@ -510,7 +621,7 @@ no parallel convention:
 |---|---|---|
 | Ingestion/storage failure | `ingestion` step, `failed` outcome, correlation ID | Retry upload; nothing persisted, no cleanup needed |
 | Extraction schema violation | `extraction` step failed + per-field outcomes | Document stays attached; re-run extraction (model retry or schema fix); derived facts never partially persisted |
-| VLM/LLM unreachable | step failure + circuit-breaker state change event | Turn degrades honestly (findings + attached-document notice, no invented extraction); breaker resets on probe success |
+| VLM/LLM unreachable | step failure + circuit-breaker state change event (TRO-47, §8 — per-request only, not cross-request, see `docs/SLOS.md` §3's named limitation) | Turn degrades honestly (findings + attached-document notice, no invented extraction); breaker resets on probe success |
 | Retrieval returns nothing | `retrieval` step, zero-hit outcome | Answer states evidence unavailable; check index health via `/ready`; rebuild index from repo corpus if corrupted |
 | Reranker down | `rerank` step failed, fallback flagged | Hybrid-score fallback already applied; restore vendor, no data loss |
 | Supervisor routing error | handoff `StepRecord` with failed outcome | Trace reconstructs the route from correlation ID alone; fix is code, cases feed the golden set |
@@ -554,9 +665,13 @@ overwritten; re-extraction supersedes, with the prior version retained.
   guessed, extraction golden cases with known ground truth, hard-zero on
   critical values flowing into the Week 1 detectors.
 - **R-W3 — Bounding-box fidelity.** Coordinates from VLMs are the least
-  reliable part of extraction. Mitigation: page-image rendering if needed;
-  boxes are UI affordance, not verification ground — verification rides the
-  value + field path, so a sloppy box degrades UX, never correctness.
+  reliable part of extraction. Mitigation: boxes are UI affordance, not
+  verification ground — verification rides the value + field path, so a
+  sloppy box degrades UX, never correctness. **As-built:** the VLM returns
+  `bbox` inline in its extraction JSON (no separate ingest-time page-render
+  step turned out to be needed); `BoundingBox::fromWire()` never throws on a
+  malformed box — it degrades to `null` so the field it decorates stays
+  valid (§3, §4).
 - **R-W4 — Retrieval poisoning the answer.** Guideline text is non-PHI but
   still untrusted input to the prompt. Mitigation: curated committed corpus
   only (no live web), snippets rendered as quoted evidence, same
@@ -588,7 +703,9 @@ overwritten; re-extraction supersedes, with the prior version retained.
 5. 50-case golden set + baseline + comparator + PR-blocking hook + the
    committed synthetic regression and its meta-test (armed before UI work).
 6. UI (upload, click-to-source, bbox overlay), dashboard extensions, OpenAPI
-   + Bruno collection, docs as-built.
+   + Bruno collection, docs as-built. **Status:** UI, dashboard, OpenAPI/Bruno,
+   and Wave M resilience shipped (TRO-44/45/46/47/48/54, §4/§8); this
+   reconciliation pass (TRO-49) is the "docs as-built" item.
 
 Acceptance-criteria-shaped outputs of the design reviews live in
 [`docs/W2_PRD_SEEDS.md`](docs/W2_PRD_SEEDS.md) — the PRD turns them into work
@@ -597,7 +714,11 @@ facts, different artifact.
 
 ---
 
-*Forward-looking at Week 2 planning (2026-07-13). The Week 1 baseline this
-builds on is `ARCHITECTURE.md`; the write amendment is recorded there (§1,
-§7) and in `CLAUDE.md`. Testing strategy detail, SLO numbers, and RPO/RTO
-figures are recorded as-built, not invented up front.*
+*Authored at Week 2 planning (2026-07-13); reconciled against the as-built
+module on `feat/w2-wave-m-resilience-legibility` (2026-07-15, TRO-49). The
+Week 1 baseline this builds on is `ARCHITECTURE.md`; the write amendment is
+recorded there (§1, §7) and in `CLAUDE.md`. Testing strategy detail, SLO
+numbers, and RPO/RTO figures are recorded as-built, not invented up front —
+SLO *targets* remain `PENDING MEASUREMENT` pending production volume
+(`docs/SLOS.md`, §8); RPO/RTO for the PHI-bearing store remain pending
+measurement on the deployment target (§11).*
