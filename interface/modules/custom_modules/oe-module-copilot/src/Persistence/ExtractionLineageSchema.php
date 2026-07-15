@@ -51,6 +51,13 @@ final class ExtractionLineageSchema
      * the table present (persistence, tests) — the statement in the file is
      * `CREATE TABLE IF NOT EXISTS`.
      *
+     * Also upgrades an already-installed table in place: a deployed site
+     * never reinstalls the module, so a column added to the committed SQL
+     * after go-live (e.g. TRO-44's `bbox`) would otherwise never reach an
+     * existing installation. Each upgrade is its own `SHOW COLUMNS` check +
+     * conditional `ALTER TABLE ADD COLUMN` — additive only, never a DROP or
+     * MODIFY, so this never touches or reinterprets data already stored.
+     *
      * @throws \RuntimeException if the committed SQL file is missing or unreadable — fail loud, never silently skip schema setup.
      */
     public static function ensureInstalled(): void
@@ -64,6 +71,29 @@ final class ExtractionLineageSchema
         foreach (self::statements($sql) as $statement) {
             QueryUtils::sqlStatementThrowException($statement, []);
         }
+
+        self::ensureBboxColumn();
+    }
+
+    /**
+     * In-place upgrade for a pre-bbox installation (TRO-44): adds the
+     * nullable `bbox` column when it is not already present.
+     */
+    private static function ensureBboxColumn(): void
+    {
+        $rows = QueryUtils::fetchRecords(
+            'SHOW COLUMNS FROM ' . self::LINEAGE_TABLE . " LIKE 'bbox'",
+            [],
+        );
+
+        if ($rows !== []) {
+            return;
+        }
+
+        QueryUtils::sqlStatementThrowException(
+            'ALTER TABLE ' . self::LINEAGE_TABLE . ' ADD COLUMN bbox VARCHAR(64) NULL',
+            [],
+        );
     }
 
     private static function sqlFilePath(): string

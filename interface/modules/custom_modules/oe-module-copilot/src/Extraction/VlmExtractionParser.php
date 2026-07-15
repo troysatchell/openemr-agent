@@ -23,6 +23,13 @@
  * acting on it is the answer model's read-time concern (Week 1
  * untrusted-content treatment), never this boundary's.
  *
+ * The one OPTIONAL key in the allowlist is `bbox` on every ExtractedField
+ * wire object (TRO-44): a UI-only page-region hint, parsed via
+ * {@see BoundingBox::fromWire()}. Per R-W3 ("a sloppy box degrades UX, never
+ * correctness"), a malformed or missing bbox degrades to null WITHOUT
+ * rejecting the field — the strictness this boundary guarantees is about
+ * unrecognized *keys*, not about the bbox value's own well-formedness.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -48,7 +55,16 @@ final class VlmExtractionParser
     ];
 
     /** @var list<string> */
-    private const EXTRACTED_FIELD_KEYS = ['isPresent', 'value', 'confidence', 'citation'];
+    private const EXTRACTED_FIELD_REQUIRED_KEYS = ['isPresent', 'value', 'confidence', 'citation'];
+
+    /**
+     * bbox is the one OPTIONAL key on an ExtractedField wire object
+     * (TRO-44) — omitting it stays valid (backward compatibility with every
+     * pre-bbox fixture and live wire).
+     *
+     * @var list<string>
+     */
+    private const EXTRACTED_FIELD_OPTIONAL_KEYS = ['bbox'];
 
     private function __construct()
     {
@@ -153,7 +169,7 @@ final class VlmExtractionParser
     private static function parseExtractedField(mixed $wire, string $fieldPath): ExtractedField
     {
         $data = self::requireMap($wire, $fieldPath);
-        self::assertExactKeys($data, self::EXTRACTED_FIELD_KEYS, $fieldPath);
+        self::assertAllowedKeys($data, self::EXTRACTED_FIELD_REQUIRED_KEYS, self::EXTRACTED_FIELD_OPTIONAL_KEYS, $fieldPath);
 
         $isPresent = self::extractBool($data, 'isPresent', $fieldPath);
 
@@ -170,9 +186,10 @@ final class VlmExtractionParser
         $value = self::extractRequiredString($data, 'value', $fieldPath);
         $confidence = self::parseConfidence($data, $fieldPath);
         $citation = self::parseCitation($data['citation'], $fieldPath . '.citation');
+        $bbox = array_key_exists('bbox', $data) ? BoundingBox::fromWire($data['bbox']) : null;
 
         try {
-            return ExtractedField::present($value, $confidence, $citation);
+            return ExtractedField::present($value, $confidence, $citation, $bbox);
         } catch (\DomainException $e) {
             throw new ExtractionParseException(sprintf('"%s" failed validation', $fieldPath), 0, $e);
         }
@@ -283,6 +300,33 @@ final class VlmExtractionParser
         }
 
         foreach ($keys as $key) {
+            if (!array_key_exists($key, $data)) {
+                throw new ExtractionParseException(sprintf('"%s" is missing required key "%s"', $fieldPath, $key));
+            }
+        }
+    }
+
+    /**
+     * Like {@see assertExactKeys()}, but a subset of the allowlist is
+     * OPTIONAL: every key present must be required-or-optional, and every
+     * required key must be present, but an optional key may be omitted
+     * (TRO-44's `bbox` — backward compatibility with every pre-bbox wire).
+     *
+     * @param array<array-key, mixed> $data
+     * @param list<string> $requiredKeys
+     * @param list<string> $optionalKeys
+     */
+    private static function assertAllowedKeys(array $data, array $requiredKeys, array $optionalKeys, string $fieldPath): void
+    {
+        $allowedKeys = [...$requiredKeys, ...$optionalKeys];
+
+        foreach (array_keys($data) as $key) {
+            if (!is_string($key) || !in_array($key, $allowedKeys, true)) {
+                throw new ExtractionParseException(sprintf('"%s" contains an unrecognized key', $fieldPath));
+            }
+        }
+
+        foreach ($requiredKeys as $key) {
             if (!array_key_exists($key, $data)) {
                 throw new ExtractionParseException(sprintf('"%s" is missing required key "%s"', $fieldPath, $key));
             }

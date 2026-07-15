@@ -57,6 +57,13 @@
             { "$ref": "#/$defs/SourceCitation" },
             { "type": "null" }
           ]
+        },
+        "bbox": {
+          "type": ["array", "null"],
+          "items": { "type": "number", "minimum": 0, "maximum": 1 },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Optional UI-only page-region hint [x, y, width, height], normalized 0..1 relative to the page (TRO-44). Never verification ground; omitted or null when the model cannot ground a region."
         }
       },
       "required": ["isPresent", "value", "confidence", "citation"],

@@ -24,7 +24,13 @@
  *                      document, REFUSED unless the document belongs to the
  *                      named patient (cross-patient leak is the S-class
  *                      failure this guards):
- *                      `{type: 'document', document_id, filename, page, quote, field}`.
+ *                      `{type: 'document', document_id, filename, page, quote, field,
+ *                      bbox, document_base64, document_mime}`. `bbox` is the
+ *                      stored normalized [x,y,w,h] (TRO-44) — null when no
+ *                      box was captured, never invented; `document_base64` /
+ *                      `document_mime` are the actual source bytes so the
+ *                      panel viewer can render the cited page and draw the
+ *                      overlay.
  *   - `derived_observation` -> the procedure_result id is resolved through
  *                      the same lineage to its source document, then behaves
  *                      exactly like the document case (same patient check;
@@ -89,6 +95,13 @@ final class SourceResolverEndpoint
      */
     private const GUIDELINE_SNIPPET_LENGTH = 300;
 
+    /**
+     * Default MIME for a document-preview render when the stored
+     * `documents.mimetype` is blank — every source document this module
+     * ingests is a PDF (`DocumentIngestionService`'s accepted content type).
+     */
+    private const DEFAULT_DOCUMENT_MIME = 'application/pdf';
+
     private function __construct()
     {
         // Static-only composition root; see forLiveResolution().
@@ -110,7 +123,7 @@ final class SourceResolverEndpoint
      *        `sourceType:sourceId[#fieldOrChunkId]`), 'patient_uuid' (string).
      *
      * @return array{type: 'guideline', source_id: string, chunk_id: string, heading: string, snippet: string}
-     *     |array{type: 'document', document_id: int, filename: string, page: ?string, quote: string, field: string}
+     *     |array{type: 'document', document_id: int, filename: string, page: ?string, quote: string, field: string, bbox: ?list<float>, document_base64: string, document_mime: string}
      *     |array{type: 'detector', finding_id: string, label: string}
      *     |array{type: 'chart', source_type: string, source_id: string}
      *
@@ -223,7 +236,7 @@ final class SourceResolverEndpoint
     }
 
     /**
-     * @return array{type: 'document', document_id: int, filename: string, page: ?string, quote: string, field: string}
+     * @return array{type: 'document', document_id: int, filename: string, page: ?string, quote: string, field: string, bbox: ?list<float>, document_base64: string, document_mime: string}
      */
     private function resolveDocumentExtraction(string $docType, string $sourceId, ?string $fieldPath, string $patientUuid): array
     {
@@ -239,7 +252,7 @@ final class SourceResolverEndpoint
         $documentId = (int) $sourceId;
         $patientPid = $this->resolvePid($patientUuid);
 
-        $filename = $this->requireOwnedDocumentFilename($documentId, $patientPid);
+        $document = $this->requireOwnedDocument($documentId, $patientPid);
 
         $citation = $docType === 'lab_pdf'
             ? $this->fetchLabFieldCitation($documentId, $fieldPath)
@@ -251,15 +264,18 @@ final class SourceResolverEndpoint
         return [
             'type' => 'document',
             'document_id' => $documentId,
-            'filename' => $filename,
+            'filename' => $document['filename'],
             'page' => $citation['page'],
             'quote' => $citation['quote'],
             'field' => $fieldPath,
+            'bbox' => $citation['bbox'],
+            'document_base64' => $this->readDocumentBase64($documentId),
+            'document_mime' => $document['mimetype'] ?? self::DEFAULT_DOCUMENT_MIME,
         ];
     }
 
     /**
-     * @return array{type: 'document', document_id: int, filename: string, page: ?string, quote: string, field: string}
+     * @return array{type: 'document', document_id: int, filename: string, page: ?string, quote: string, field: string, bbox: ?list<float>, document_base64: string, document_mime: string}
      */
     private function resolveDerivedObservation(string $sourceId, string $patientUuid): array
     {
@@ -269,7 +285,8 @@ final class SourceResolverEndpoint
         $resultId = (int) $sourceId;
 
         $rows = QueryUtils::fetchRecords(
-            'SELECT mcel.document_id AS document_id, mcel.field_path AS field_path, mcel.page AS page, prr.result AS quote'
+            'SELECT mcel.document_id AS document_id, mcel.field_path AS field_path, mcel.page AS page,'
+                . ' prr.result AS quote, mcel.bbox AS bbox'
                 . ' FROM ' . ExtractionLineageSchema::LINEAGE_TABLE . ' mcel'
                 . ' JOIN procedure_result prr ON mcel.procedure_result_id = prr.procedure_result_id'
                 . ' WHERE mcel.procedure_result_id = ?',
@@ -284,6 +301,7 @@ final class SourceResolverEndpoint
         $fieldPath = $row['field_path'] ?? null;
         $page = $row['page'] ?? null;
         $quote = $row['quote'] ?? null;
+        $bboxCsv = $row['bbox'] ?? null;
         if (!is_int($documentId) && !(is_string($documentId) && ctype_digit($documentId))) {
             throw new \RuntimeException('Extraction lineage query returned a non-numeric document id');
         }
@@ -296,18 +314,24 @@ final class SourceResolverEndpoint
         if (!is_string($quote)) {
             throw new \RuntimeException('Extraction lineage query returned a non-string quote value');
         }
+        if ($bboxCsv !== null && !is_string($bboxCsv)) {
+            throw new \RuntimeException('Extraction lineage query returned a non-string bbox value');
+        }
 
         $patientPid = $this->resolvePid($patientUuid);
         $resolvedDocumentId = (int) $documentId;
-        $filename = $this->requireOwnedDocumentFilename($resolvedDocumentId, $patientPid);
+        $document = $this->requireOwnedDocument($resolvedDocumentId, $patientPid);
 
         return [
             'type' => 'document',
             'document_id' => $resolvedDocumentId,
-            'filename' => $filename,
+            'filename' => $document['filename'],
             'page' => $page,
             'quote' => $quote,
             'field' => $fieldPath,
+            'bbox' => $this->parseBboxCsv($bboxCsv),
+            'document_base64' => $this->readDocumentBase64($resolvedDocumentId),
+            'document_mime' => $document['mimetype'] ?? self::DEFAULT_DOCUMENT_MIME,
         ];
     }
 
@@ -382,15 +406,21 @@ final class SourceResolverEndpoint
 
     /**
      * Verifies the document belongs to `$patientPid` (honoring the `deleted`
-     * filter, D10) and returns its display filename. "Does not exist" and
-     * "exists but belongs to a different patient" throw the IDENTICAL
-     * message — the S-class failure this guards against is a cross-patient
-     * leak, so the two cases must not be distinguishable from the outside.
+     * filter, D10) and returns its display filename plus the stored
+     * `mimetype` the document-preview render needs (TRO-44; blank/absent
+     * normalized to null — D1 — so callers apply one honest default). The
+     * document's bytes are resolved separately, by id, through
+     * {@see readDocumentBase64()}. "Does not exist" and "exists but belongs
+     * to a different patient" throw the IDENTICAL message — the S-class
+     * failure this guards against is a cross-patient leak, so the two cases
+     * must not be distinguishable from the outside.
+     *
+     * @return array{filename: string, mimetype: ?string}
      */
-    private function requireOwnedDocumentFilename(int $documentId, int $patientPid): string
+    private function requireOwnedDocument(int $documentId, int $patientPid): array
     {
         $rows = QueryUtils::fetchRecords(
-            'SELECT foreign_id, name, url FROM documents WHERE id = ? AND deleted = 0',
+            'SELECT foreign_id, name, url, mimetype FROM documents WHERE id = ? AND deleted = 0',
             [$documentId],
         );
         $row = $rows[0] ?? null;
@@ -398,10 +428,12 @@ final class SourceResolverEndpoint
         $foreignId = null;
         $name = null;
         $url = null;
+        $mimetype = null;
         if ($row !== null) {
             $foreignId = $row['foreign_id'] ?? null;
             $name = $row['name'] ?? null;
             $url = $row['url'] ?? null;
+            $mimetype = $row['mimetype'] ?? null;
         }
 
         $ownedByPatient = (is_int($foreignId) && $foreignId === $patientPid)
@@ -416,17 +448,86 @@ final class SourceResolverEndpoint
         if ($filename === null || trim($filename) === '') {
             throw new \DomainException('Unknown source document');
         }
+        if ($mimetype !== null && !is_string($mimetype)) {
+            throw new \RuntimeException('Documents query returned a non-string mimetype value');
+        }
 
-        return $filename;
+        return [
+            'filename' => $filename,
+            'mimetype' => (is_string($mimetype) && trim($mimetype) !== '') ? $mimetype : null,
+        ];
     }
 
     /**
-     * @return array{page: ?string, quote: string}|null
+     * Resolves the document's stored bytes, base64-encoded for the wire.
+     * Reads through core's own `\Document::get_data()` (the exact counterpart
+     * of the `\Document::createDocument()` write `PatientDocumentAttacher`
+     * already uses) rather than reading the `file://` path directly — that
+     * is deliberate: whether the on-disk bytes are plaintext or
+     * `drive_encryption`-encrypted is a deployment setting core's own crypto
+     * layer already knows how to reverse, and reimplementing that decision
+     * here would silently diverge the moment the setting differs from this
+     * dev environment's default. Fails loud (\DomainException) on any
+     * read/decrypt failure — an unreadable source is never silently swapped
+     * for an empty preview.
+     */
+    private function readDocumentBase64(int $documentId): string
+    {
+        try {
+            $bytes = (new \Document($documentId))->get_data();
+        } catch (\Throwable $e) {
+            throw new \DomainException('Source document bytes could not be read', 0, $e);
+        }
+
+        if (!is_string($bytes) || $bytes === '') {
+            throw new \DomainException('Source document bytes could not be read');
+        }
+
+        return base64_encode($bytes);
+    }
+
+    /**
+     * Parses a stored lineage `bbox` CSV (the canonical form
+     * `BoundingBox::toCsv()` writes) back into its four components. Lenient
+     * by construction (R-W3): a value that does not parse renders as "no
+     * box" rather than surfacing an internal error, even though in practice
+     * this column is only ever written by this module's own writer.
+     *
+     * @return list<float>|null
+     */
+    private function parseBboxCsv(?string $csv): ?array
+    {
+        if ($csv === null || trim($csv) === '') {
+            return null;
+        }
+
+        $parts = explode(',', $csv);
+        if (count($parts) !== 4) {
+            return null;
+        }
+
+        $components = [];
+        foreach ($parts as $part) {
+            if (!is_numeric($part)) {
+                return null;
+            }
+            $components[] = (float) $part;
+        }
+
+        return $components;
+    }
+
+    /**
+     * lab_pdf lineage carries a stored bbox (TRO-44, this module's own
+     * writer); the query pulls it alongside page/quote so a single row read
+     * resolves the whole citation.
+     *
+     * @return array{page: ?string, quote: string, bbox: ?list<float>}|null
      */
     private function fetchLabFieldCitation(int $documentId, string $fieldPath): ?array
     {
         $rows = QueryUtils::fetchRecords(
-            'SELECT mcel.page AS page, prr.result AS quote'
+            'SELECT mcel.page AS page, prr.result AS quote, mcel.bbox AS bbox'
                 . ' FROM ' . ExtractionLineageSchema::LINEAGE_TABLE . ' mcel'
                 . ' JOIN procedure_result prr ON mcel.procedure_result_id = prr.procedure_result_id'
                 . ' WHERE mcel.document_id = ? AND mcel.field_path = ?'
@@ -438,7 +539,11 @@ final class SourceResolverEndpoint
     }
 
     /**
-     * @return array{page: ?string, quote: string}|null
+     * intake_form candidates have no bbox column (out of this ticket's
+     * scope — TRO-44 covers the lab_pdf round trip only): `bbox` is always
+     * null here, never invented.
+     *
+     * @return array{page: ?string, quote: string, bbox: ?list<float>}|null
      */
     private function fetchIntakeFieldCitation(int $documentId, string $fieldPath): ?array
     {
@@ -455,11 +560,13 @@ final class SourceResolverEndpoint
     /**
      * The QueryUtils boundary yields untyped rows; this helper IS the
      * narrowing point, so it accepts the wide shape and validates every
-     * field itself.
+     * field itself. `bbox` is optional in the row shape (the intake-candidate
+     * query never selects it) and always narrows through
+     * {@see parseBboxCsv()} when present.
      *
      * @param array<array-key, mixed>|null $row
      *
-     * @return array{page: ?string, quote: string}|null
+     * @return array{page: ?string, quote: string, bbox: ?list<float>}|null
      */
     private function narrowCitationRow(?array $row): ?array
     {
@@ -469,13 +576,17 @@ final class SourceResolverEndpoint
 
         $page = $row['page'] ?? null;
         $quote = $row['quote'] ?? null;
+        $bboxCsv = $row['bbox'] ?? null;
         if ($page !== null && !is_string($page)) {
             throw new \RuntimeException('Extraction citation query returned a non-string page value');
         }
         if (!is_string($quote)) {
             throw new \RuntimeException('Extraction citation query returned a non-string quote value');
         }
+        if ($bboxCsv !== null && !is_string($bboxCsv)) {
+            throw new \RuntimeException('Extraction citation query returned a non-string bbox value');
+        }
 
-        return ['page' => $page, 'quote' => $quote];
+        return ['page' => $page, 'quote' => $quote, 'bbox' => $this->parseBboxCsv($bboxCsv)];
     }
 }

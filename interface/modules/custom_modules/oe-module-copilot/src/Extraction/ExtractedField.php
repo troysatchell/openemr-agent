@@ -9,6 +9,11 @@
  * is absent, never defaulted). A present field cannot exist without its
  * citation; an absent field carries no value, confidence, or citation.
  *
+ * A present field may also carry an optional {@see BoundingBox} — the page
+ * region the value was read from (TRO-44). The box is a UI affordance only:
+ * it is never required, never verification ground, and its absence never
+ * degrades the field's validity (R-W3).
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -29,6 +34,7 @@ final readonly class ExtractedField
         public ?string $value,
         public ?ExtractionConfidence $confidence,
         public ?SourceRef $citation,
+        public ?BoundingBox $bbox = null,
     ) {
         if ($isPresent) {
             if ($value === null || $confidence === null || $citation === null) {
@@ -39,13 +45,13 @@ final readonly class ExtractedField
         }
     }
 
-    public static function present(string $value, ExtractionConfidence $confidence, SourceRef $citation): self
+    public static function present(string $value, ExtractionConfidence $confidence, SourceRef $citation, ?BoundingBox $bbox = null): self
     {
         if (trim($value) === '') {
             throw new \DomainException('A present ExtractedField requires a non-blank value — blank is absence, not a value (D1)');
         }
 
-        return new self(true, $value, $confidence, $citation);
+        return new self(true, $value, $confidence, $citation, $bbox);
     }
 
     public static function absent(): self

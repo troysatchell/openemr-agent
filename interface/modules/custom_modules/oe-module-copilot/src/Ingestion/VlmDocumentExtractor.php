@@ -177,6 +177,13 @@ final readonly class VlmDocumentExtractor
                "quote_or_value": "<verbatim text>"}.
             When a value is absent: isPresent=false, value=null, confidence=null,
             citation=null. Never guess or default a value.
+
+            A present field MAY also carry an OPTIONAL "bbox" key: the exact
+            region the value was read from, as [x, y, width, height], each
+            number normalized 0.0-1.0 relative to the page's width/height
+            (top-left origin). Omit "bbox" entirely whenever you are not
+            confident of the exact region — omitting it is fine, and is
+            strongly preferred over guessing a box.
             PROMPT;
         $shared = sprintf($shared, $docType);
 
@@ -188,7 +195,7 @@ final readonly class VlmDocumentExtractor
                   "analytes": [
                     {
                       "testName": {"isPresent": true, "value": "Potassium", "confidence": 0.98, "citation": {"source_type": "lab_pdf", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "analytes[0].testName", "quote_or_value": "Potassium"}},
-                      "value": {"isPresent": true, "value": "4.4", "confidence": 0.98, "citation": {"source_type": "lab_pdf", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "analytes[0].value", "quote_or_value": "4.4"}},
+                      "value": {"isPresent": true, "value": "4.4", "confidence": 0.98, "citation": {"source_type": "lab_pdf", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "analytes[0].value", "quote_or_value": "4.4"}, "bbox": [0.42, 0.31, 0.08, 0.02]},
                       "unit": {"isPresent": true, "value": "mmol/L", "confidence": 0.98, "citation": {"source_type": "lab_pdf", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "analytes[0].unit", "quote_or_value": "mmol/L"}},
                       "referenceRange": {"isPresent": true, "value": "3.5 - 5.1", "confidence": 0.95, "citation": {"source_type": "lab_pdf", "source_id": "0", "page_or_section": "1", "field_or_chunk_id": "analytes[0].referenceRange", "quote_or_value": "3.5 - 5.1"}},
                       "abnormalFlag": {"isPresent": false, "value": null, "confidence": null, "citation": null},

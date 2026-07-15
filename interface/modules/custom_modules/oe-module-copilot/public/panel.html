@@ -50,6 +50,14 @@
   `file_size_bytes`); this panel reads the chosen file via `FileReader` and
   sends that content mode, so a real deployment ingests it rather than
   refusing it.
+
+  Click-to-source PDF overlay (TRO-44): when a resolved `document` preview
+  carries `document_base64`, PDF.js (vendored under vendor/pdfjs/ — no CDN,
+  see vendor/pdfjs/VERSION.md) renders the cited page onto a canvas and, when
+  the preview's `bbox` is non-null, a `.bbox-overlay` div is positioned over
+  the exact normalized region the value was read from. `bbox` is a UI
+  affordance only (R-W3) — a null bbox renders the page with no overlay,
+  honestly, rather than guessing a box.
 -->
 <style>
   :root { --ink:#1a1f24; --mut:#5a6572; --line:#d9dee4; --crit:#b3261e; --warn:#9a6a00; --ok:#1b6e3c; --rej:#6b7280; --bg:#f7f8fa; --guide:#1c4e80; --guide-bg:#eef6ff; --guide-line:#b9d7f5; --det-bg:#fdf0f0; --det-line:#e3b8b5; }
@@ -88,6 +96,9 @@
   .ref.ref-chart { background:#eef1f5; border-color:var(--line); color:#33475c; }
   .ref:focus-visible { outline:2px solid #20476b; outline-offset:1px; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
+  #doc-preview { position:relative; margin-top:10px; display:inline-block; }
+  #doc-preview canvas { display:block; max-width:100%; border:1px solid var(--line); border-radius:6px; }
+  .bbox-overlay { position:absolute; border:2px solid var(--crit); background:rgba(179,38,30,.12); pointer-events:none; }
 </style>
 </head>
 <body>
@@ -136,10 +147,20 @@
   </fieldset>
 </div>
 
+<!-- Vendored PDF.js (TRO-44) — self-contained, no CDN; see vendor/pdfjs/VERSION.md. -->
+<script src="vendor/pdfjs/pdf.min.js"></script>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
 const priorTurns = [];
+
+// The vendored legacy UMD build exposes the global `pdfjsLib`; point its
+// worker at the vendored worker file — never a CDN — before any getDocument()
+// call. Guarded so the rest of the panel still degrades gracefully (text-only
+// previews) if the vendored script somehow failed to load.
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdfjs/pdf.worker.min.js";
+}
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -214,6 +235,63 @@ function refChips(refs) {
   return box;
 }
 
+// Strict base64 -> Uint8Array, the shape pdfjsLib.getDocument({data}) wants.
+function base64ToUint8Array(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// Click-to-source PDF overlay (TRO-44): decodes the resolved preview's
+// document_base64, renders the cited page (preview.page, default 1) onto a
+// canvas via pdfjsLib.getDocument, and — only when the preview carries a
+// stored bbox — positions a bbox-overlay div over the exact normalized
+// region the value was read from. bbox is a UI affordance only (R-W3): a
+// null bbox renders the page with NO overlay, honestly, rather than a
+// guessed box. Rendering failures degrade to an honest hint — the text
+// preview above has already rendered and stays intact either way.
+async function renderDocumentPreview(preview, container) {
+  if (!window.pdfjsLib) {
+    container.appendChild(el("div", "hint", "PDF viewer unavailable — the vendored PDF.js library did not load."));
+    return;
+  }
+
+  const wrap = el("div", null);
+  wrap.id = "doc-preview";
+  container.appendChild(wrap);
+
+  const canvas = document.createElement("canvas");
+  wrap.appendChild(canvas);
+
+  try {
+    const data = base64ToUint8Array(preview.document_base64);
+    const pdf = await pdfjsLib.getDocument({ data: data }).promise;
+    const requestedPage = parseInt(preview.page, 10);
+    const pageNumber = Math.min(Math.max(Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1, 1), pdf.numPages);
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1.5 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d");
+    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+    if (Array.isArray(preview.bbox) && preview.bbox.length === 4) {
+      const [x, y, w, h] = preview.bbox;
+      const overlay = el("div", "bbox-overlay");
+      overlay.style.left = (x * canvas.width) + "px";
+      overlay.style.top = (y * canvas.height) + "px";
+      overlay.style.width = (w * canvas.width) + "px";
+      overlay.style.height = (h * canvas.height) + "px";
+      wrap.appendChild(overlay);
+    }
+  } catch (e) {
+    wrap.appendChild(el("div", "hint", "Could not render the source page for preview."));
+  }
+}
+
 // Renders one resolved source preview by type — minimum-necessary fields
 // only, matching exactly what SourceResolverEndpoint returns for that type.
 function renderSourcePreview(preview) {
@@ -228,6 +306,9 @@ function renderSourcePreview(preview) {
     item.appendChild(el("div", null, preview.filename + " — page " + (preview.page || "(no page recorded)")));
     item.appendChild(el("div", "hint", "\"" + preview.quote + "\" — field " + preview.field));
     box.appendChild(item);
+    if (preview.document_base64) {
+      renderDocumentPreview(preview, box);
+    }
     return;
   }
   if (preview.type === "guideline") {
