@@ -127,7 +127,9 @@ class DashboardWeek2MetricsTest extends TestCase
         $this->assertSame('rerank_search_unit', $vendorUnits['unit_kind'] ?? null);
         $this->assertSame(2, $vendorUnits['units'] ?? null);
         $this->assertSame('cohere-2026-07', $vendorUnits['price_version'] ?? null);
-        $this->assertEqualsWithDelta(0.004, (float) ($vendorUnits['cost_usd'] ?? -1.0), 0.0000001);
+        $costUsd = $vendorUnits['cost_usd'] ?? null;
+        $this->assertIsFloat($costUsd);
+        $this->assertEqualsWithDelta(0.004, $costUsd, 0.0000001);
     }
 
     public function testDashboardRollsUpWeek2StepsAndCost(): void

@@ -118,14 +118,11 @@ class BboxLineageRoundTripTest extends TestCase
             . ' WHERE lin.document_id = ? ORDER BY prr.procedure_result_id',
             [$documentId],
         );
-        $this->assertIsArray($rows);
         $this->assertCount(2, $rows);
 
-        $this->assertIsArray($rows[0]);
         $this->assertSame('Potassium', $rows[0]['name']);
         $this->assertSame('0.1200,0.3400,0.5000,0.0400', $rows[0]['bbox'], 'the value-field box persists as canonical CSV');
 
-        $this->assertIsArray($rows[1]);
         $this->assertSame('Sodium', $rows[1]['name']);
         $this->assertNull($rows[1]['bbox'], 'no wire box stores NULL — never a guessed or zeroed box (D1)');
 
@@ -149,17 +146,13 @@ class BboxLineageRoundTripTest extends TestCase
         $this->assertIsArray($bbox, 'the stored box rides the preview for the overlay');
         $this->assertCount(4, $bbox);
         $expected = [0.12, 0.34, 0.5, 0.04];
-        foreach (array_values($bbox) as $i => $component) {
-            $this->assertIsNumeric($component);
-            $this->assertEqualsWithDelta($expected[$i], (float) $component, 0.0001);
+        foreach ($bbox as $i => $component) {
+            $this->assertEqualsWithDelta($expected[$i], $component, 0.0001);
         }
 
-        $mime = $preview['document_mime'] ?? null;
-        $this->assertSame('application/pdf', $mime);
+        $this->assertSame('application/pdf', $preview['document_mime']);
 
-        $base64 = $preview['document_base64'] ?? null;
-        $this->assertIsString($base64);
-        $bytes = base64_decode($base64, true);
+        $bytes = base64_decode($preview['document_base64'], true);
         $this->assertIsString($bytes);
         $this->assertStringStartsWith('%PDF', $bytes, 'the preview carries the real source bytes the viewer renders');
     }
@@ -177,7 +170,7 @@ class BboxLineageRoundTripTest extends TestCase
 
         $this->assertSame('document', $preview['type']);
         $this->assertNull($preview['bbox'] ?? null, 'no stored box resolves as null — the viewer opens the page without an overlay (R-W3)');
-        $this->assertIsString($preview['document_base64'] ?? null, 'the source stays renderable even without a box');
+        $this->assertNotSame('', $preview['document_base64'], 'the source stays renderable even without a box');
     }
 
     private function lineageHasBboxColumn(): bool
@@ -187,7 +180,7 @@ class BboxLineageRoundTripTest extends TestCase
             [],
         );
 
-        return is_array($rows) && $rows !== [];
+        return $rows !== [];
     }
 
     /**

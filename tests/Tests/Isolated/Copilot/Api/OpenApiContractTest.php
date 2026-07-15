@@ -55,7 +55,7 @@ class OpenApiContractTest extends TestCase
     /**
      * "METHOD /path" specs declared by the OpenAPI document.
      *
-     * @return array{list<string>, array<string, mixed>}
+     * @return array{list<string>, array<mixed>}
      */
     private static function specRouteSpecs(): array
     {
