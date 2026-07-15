@@ -212,7 +212,11 @@ class Bootstrap
                     // corpus chunk table (CorpusIndexSchema) — existence only,
                     // never a content scan.
                     'vector-index' => static function (): bool {
-                        return QueryUtils::fetchRecords('SHOW TABLES LIKE ?', [CorpusIndexSchema::CHUNK_TABLE]) !== [];
+                        // Dense retrieval needs the embeddings, not just the
+                        // chunk text — probe both so a partial install can
+                        // never report ready and fail on retrieval.
+                        return QueryUtils::fetchRecords('SHOW TABLES LIKE ?', [CorpusIndexSchema::CHUNK_TABLE]) !== []
+                            && QueryUtils::fetchRecords('SHOW TABLES LIKE ?', [CorpusIndexSchema::EMBEDDING_TABLE]) !== [];
                     },
                     // Missing key degrades evidence honestly (PS-12) rather
                     // than failing the whole turn — 'degraded', never

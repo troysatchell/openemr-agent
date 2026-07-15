@@ -98,4 +98,5 @@ php interface/modules/custom_modules/oe-module-copilot/bin/trace-dashboard.php [
   A sudden spike feeds the golden-chart set as candidate cases instead.
 - **Cost/token spikes**: reviewed daily against the cost-analysis tiers, not
   paged — no autonomous loop exists that could run away (single turn per
-  user action, no retries).
+  user action; the only retries are TRO-47's bounded per-vendor-call
+  transport retry, max 2 attempts, never a loop).

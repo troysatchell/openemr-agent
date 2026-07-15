@@ -111,9 +111,13 @@ Within a single request, each vendor client's method is invoked at most once
 externally, and bounded retry contributes at most `MAX_TRANSPORT_ATTEMPTS -
 1` recorded failures per outer call — below the 3-failure threshold above.
 This means the production breakers, as currently wired, cannot reach `open`
-purely from a single request's own calls; they only accumulate state across
-multiple external calls that happen to land on the *same* PHP worker process
-before the underlying dependency (or the process) recycles. Genuine
+from most single requests: the instance lives and dies with one request, so
+there is NO cross-request accumulation at all (not even on the same PHP
+worker). The only flow that can trip one today is a request making two or
+more calls on the same client instance — e.g. a supervised turn's
+extraction + answer LLM calls (2 calls x up to 2 recorded failures >= the
+3-failure threshold); single-call flows (embed, rerank) can never trip
+theirs. Genuine
 cross-request circuit breaking — protecting the whole deployment from a
 sustained vendor outage, not just one in-flight request — requires a
 persistent state store, which is out of this ticket's scope. This is called

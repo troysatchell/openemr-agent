@@ -54,6 +54,9 @@ final class CircuitBreaker
 
     private ?\DateTimeImmutable $openedAt = null;
 
+    /** One admitted half-open probe at a time; reset by any recorded outcome. */
+    private bool $halfOpenProbeInFlight = false;
+
     public function __construct(
         private readonly string $dependency,
         private readonly int $failureThreshold,
@@ -82,7 +85,21 @@ final class CircuitBreaker
     /** True unless the breaker is currently open (a cooling-down `open` state that has not yet reached `half_open`). */
     public function allows(): bool
     {
-        return $this->effectiveState() !== self::STATE_OPEN;
+        $effective = $this->effectiveState();
+        if ($effective === self::STATE_OPEN) {
+            return false;
+        }
+
+        if ($effective === self::STATE_HALF_OPEN) {
+            // Exactly one probe may reach a recovering dependency; further
+            // callers wait for that probe's recordSuccess()/recordFailure().
+            if ($this->halfOpenProbeInFlight) {
+                return false;
+            }
+            $this->halfOpenProbeInFlight = true;
+        }
+
+        return true;
     }
 
     /** 'closed' | 'open' | 'half_open' — the tri-state read purely from the injected clock, never wall time. */
@@ -103,6 +120,7 @@ final class CircuitBreaker
     public function recordFailure(): void
     {
         $effective = $this->effectiveState();
+        $this->halfOpenProbeInFlight = false;
 
         if ($effective === self::STATE_CLOSED) {
             $this->consecutiveFailures++;
@@ -124,6 +142,7 @@ final class CircuitBreaker
         $this->state = self::STATE_CLOSED;
         $this->consecutiveFailures = 0;
         $this->openedAt = null;
+        $this->halfOpenProbeInFlight = false;
     }
 
     private function open(): void

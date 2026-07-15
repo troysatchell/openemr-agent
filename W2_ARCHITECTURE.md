@@ -591,10 +591,12 @@ no parallel convention:
   exception, before the transport is invoked (Week 1's R11 posture).
   **Known limitation, named not hidden (`docs/SLOS.md` §3):** each breaker
   is constructed fresh per PHP request — no persistent cross-request store
-  (APCu/Redis/DB row) — so as wired today it protects a single in-flight
-  request's own retries, not the whole deployment against a sustained
-  vendor outage; genuine cross-request breaking needs a persistent state
-  store, out of TRO-47's scope.
+  (APCu/Redis/DB row) — so as wired today only a flow making two or more
+  calls on the same client instance (e.g. a supervised turn's extraction +
+  answer LLM calls) can trip it; single-call flows and later requests never
+  see accumulated state. It is contract-correct scaffolding, not deployment
+  fail-fast; genuine cross-request breaking needs a persistent state store,
+  out of TRO-47's scope.
 - **`/ready` (as-built, TRO-47).** Tri-state per probe —
   `ReadinessReport::$statuses`: `'ok'` / `'degraded'` / `'failed'`; only
   `'failed'` trips the 503, `'degraded'` names itself without failing

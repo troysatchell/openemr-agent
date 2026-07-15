@@ -91,12 +91,15 @@ final readonly class ReadinessCheck
      * 'failed' reading (D1's "treat unknown as unknown" applied to probe
      * results, not just chart data).
      */
-    private function normalizeStatus(bool|string $result): string
+    private function normalizeStatus(mixed $result): string
     {
         if (is_bool($result)) {
             return $result ? self::STATUS_OK : self::STATUS_FAILED;
         }
 
+        // Anything that is not exactly true or 'degraded' — including a
+        // probe returning null/int by mistake — reads as failed, never as
+        // a crashed /ready endpoint (fail closed, loudly visible).
         return $result === self::STATUS_DEGRADED ? self::STATUS_DEGRADED : self::STATUS_FAILED;
     }
 }

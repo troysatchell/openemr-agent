@@ -551,9 +551,18 @@ components:
           type: boolean
         checks:
           type: object
-          description: Named check id -> boolean pass/fail (e.g. db, trace_sink, llm).
+          description: Named check id -> boolean pass/fail (e.g. db, trace_sink, llm). Kept for backward compatibility; degraded counts as passing here.
           additionalProperties:
             type: boolean
+        statuses:
+          type: object
+          description: >-
+            Tri-state per dependency (TRO-47): ok | degraded | failed.
+            Degraded names itself (e.g. reranker without COHERE_API_KEY)
+            without failing readiness; failed fails it.
+          additionalProperties:
+            type: string
+            enum: [ok, degraded, failed]
       additionalProperties: false
     Citation:
       type: object
