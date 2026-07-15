@@ -33,6 +33,7 @@ use OpenEMR\Services\FHIR\FhirMedicationRequestService;
 use OpenEMR\Services\FHIR\FhirObservationService;
 use OpenEMR\Services\FHIR\FhirPatientService;
 use OpenEMR\Services\FHIR\FhirServiceBase;
+use OpenEMR\Services\FHIR\Observation\FhirObservationLaboratoryService;
 
 final class OpenEmrFhirServiceFactory implements FhirServiceFactory
 {
@@ -41,12 +42,37 @@ final class OpenEmrFhirServiceFactory implements FhirServiceFactory
         return match ($resourceType) {
             'Patient' => new FhirPatientService(),
             'MedicationRequest' => new FhirMedicationRequestService(),
-            'Observation' => new FhirObservationService(),
+            'Observation' => $this->observationService(),
             'AllergyIntolerance' => new FhirAllergyIntoleranceService(),
             'Condition' => new FhirConditionService(),
             default => throw new \InvalidArgumentException(
                 sprintf('Unsupported FHIR resource type for chart reads: %s', $resourceType)
             ),
         };
+    }
+
+    private function observationService(): FhirObservationService
+    {
+        $service = new FhirObservationService();
+
+        // The laboratory sub-service is swapped so codeless derived results
+        // (result_code = '') keep their recorded test name on the module
+        // read path instead of surfacing as the null-flavor "unknown"
+        // placeholder (TRO-56).
+        $mappedServices = $service->getMappedServices();
+        if (!is_array($mappedServices)) {
+            throw new \UnexpectedValueException('FhirObservationService returned a malformed sub-service list');
+        }
+
+        $subServices = [];
+        foreach ($mappedServices as $subService) {
+            $subServices[] = $subService instanceof FhirObservationLaboratoryService
+                && $subService::class === FhirObservationLaboratoryService::class
+                    ? new NamedLaboratoryObservationService()
+                    : $subService;
+        }
+        $service->setMappedServices($subServices);
+
+        return $service;
     }
 }
