@@ -64,6 +64,7 @@ use OpenEMR\Modules\Copilot\Rag\EvidenceRetrievalService;
 use OpenEMR\Modules\Copilot\Rag\EvidenceRetrieverWorkerImpl;
 use OpenEMR\Modules\Copilot\Rag\HybridRetriever;
 use OpenEMR\Modules\Copilot\Rag\RetrievalOutcome;
+use OpenEMR\Modules\Copilot\Resilience\CircuitBreaker;
 use OpenEMR\Modules\Copilot\Routes\AclRequirement;
 use OpenEMR\Modules\Copilot\Routes\DocumentUploadEndpoint;
 use OpenEMR\Modules\Copilot\Routes\GuardedRouteRegistrar;
@@ -96,6 +97,17 @@ class Bootstrap
 
     /** The evidence-retriever's requested chunk count for the live turn route. */
     private const EVIDENCE_TOP_K = 5;
+
+    /**
+     * Circuit-breaker defaults for the three live vendor-client constructions
+     * below (TRO-47; W2_ARCHITECTURE.md §8): consecutive failures before a
+     * breaker opens, and the cooldown before it admits one half-open probe.
+     * A committed default, not yet tuned against production failure/latency
+     * data — see `docs/SLOS.md` for the honest MEASURED/PENDING MEASUREMENT
+     * accounting of these numbers.
+     */
+    private const BREAKER_FAILURE_THRESHOLD = 3;
+    private const BREAKER_COOLDOWN_SECONDS = 60;
 
     public function __construct(private readonly EventDispatcherInterface $eventDispatcher)
     {
@@ -190,6 +202,29 @@ class Bootstrap
                     // Config-presence only until the T18 LLM adapter
                     // supplies a real endpoint probe.
                     'llm' => static fn (): bool => (getenv('ANTHROPIC_API_KEY') ?: '') !== '',
+                    // Cheap metadata-only reachability check (no row scan,
+                    // no heavy IO) against core's native document table —
+                    // write (a) of the two-write amendment lands there.
+                    'document-storage' => static function (): bool {
+                        return QueryUtils::fetchRecords('SHOW TABLES LIKE ?', ['documents']) !== [];
+                    },
+                    // Same cheap metadata-only check against the module-owned
+                    // corpus chunk table (CorpusIndexSchema) — existence only,
+                    // never a content scan.
+                    'vector-index' => static function (): bool {
+                        // Dense retrieval needs the embeddings, not just the
+                        // chunk text — probe both so a partial install can
+                        // never report ready and fail on retrieval.
+                        return QueryUtils::fetchRecords('SHOW TABLES LIKE ?', [CorpusIndexSchema::CHUNK_TABLE]) !== []
+                            && QueryUtils::fetchRecords('SHOW TABLES LIKE ?', [CorpusIndexSchema::EMBEDDING_TABLE]) !== [];
+                    },
+                    // Missing key degrades evidence honestly (PS-12) rather
+                    // than failing the whole turn — 'degraded', never
+                    // 'failed', so the reranker's absence never trips /ready
+                    // into 503 on its own (TRO-47; W2_ARCHITECTURE.md §8).
+                    'reranker' => static function (): bool|string {
+                        return (getenv('COHERE_API_KEY') ?: '') !== '' ? true : 'degraded';
+                    },
                 ]);
 
                 $report = $check->run();
@@ -197,7 +232,7 @@ class Bootstrap
                     http_response_code(503);
                 }
 
-                return ['ready' => $report->ready, 'checks' => $report->checks];
+                return ['ready' => $report->ready, 'checks' => $report->checks, 'statuses' => $report->statuses];
             }
         );
 
@@ -445,9 +480,28 @@ class Bootstrap
      */
     public static function buildTurnOrchestrator(): TurnOrchestrator
     {
+        $clock = new class implements ClockInterface {
+            public function now(): \DateTimeImmutable
+            {
+                return new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+            }
+        };
+
+        // TRO-47: an open breaker fails the turn's LLM call immediately,
+        // without invoking the transport, instead of hanging on a vendor
+        // already known to be down (R11). Constructed fresh per request —
+        // see docs/SLOS.md for the honest accounting of what that does and
+        // does not protect against without a persistent, cross-request store.
+        $llmBreaker = new CircuitBreaker(
+            'anthropic-llm',
+            self::BREAKER_FAILURE_THRESHOLD,
+            self::BREAKER_COOLDOWN_SECONDS,
+            $clock,
+        );
+
         $apiKey = getenv('ANTHROPIC_API_KEY') ?: '';
         $llm = trim($apiKey) !== ''
-            ? AnthropicLlmClient::forAnthropicApi($apiKey)
+            ? AnthropicLlmClient::forAnthropicApi($apiKey, breaker: $llmBreaker)
             : new class implements LlmClient {
                 public function complete(LlmTurnRequest $request): LlmTurnResponse
                 {
@@ -456,13 +510,6 @@ class Bootstrap
                     throw new LlmUnavailableException('No language-model API key is configured');
                 }
             };
-
-        $clock = new class implements ClockInterface {
-            public function now(): \DateTimeImmutable
-            {
-                return new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-            }
-        };
 
         return new TurnOrchestrator(
             self::buildChartSnapshotProvider(),
@@ -564,12 +611,38 @@ class Bootstrap
             $embedModel = getenv('COHERE_EMBED_MODEL') ?: self::DEFAULT_COHERE_EMBED_MODEL;
             $rerankModel = getenv('COHERE_RERANK_MODEL') ?: self::DEFAULT_COHERE_RERANK_MODEL;
 
+            $evidenceClock = new class implements ClockInterface {
+                public function now(): \DateTimeImmutable
+                {
+                    return new \DateTimeImmutable();
+                }
+            };
+
+            // TRO-47: an open breaker fails the embed/rerank call
+            // immediately, without invoking the transport, instead of
+            // hanging on a vendor already known to be down (R11).
+            // Constructed fresh per request — see docs/SLOS.md for the
+            // honest accounting of what that does and does not protect
+            // against without a persistent, cross-request store.
+            $embedBreaker = new CircuitBreaker(
+                'cohere-embed',
+                self::BREAKER_FAILURE_THRESHOLD,
+                self::BREAKER_COOLDOWN_SECONDS,
+                $evidenceClock,
+            );
+            $rerankBreaker = new CircuitBreaker(
+                'cohere-rerank',
+                self::BREAKER_FAILURE_THRESHOLD,
+                self::BREAKER_COOLDOWN_SECONDS,
+                $evidenceClock,
+            );
+
             // The recorder makes embed/rerank vendor units land in the same
             // JSONL trace the turn writes, so per-vendor cost stays derivable
             // from traces alone (TRO-46).
             $vendorTraceRecorder = new JsonlTraceRecorder(self::defaultTracePath());
-            $embedder = new CohereEmbedClient(CohereHttpTransport::forEmbed(), $embedModel, $vendorTraceRecorder);
-            $reranker = new CohereRerankClient(CohereHttpTransport::forRerank(), $rerankModel, $vendorTraceRecorder);
+            $embedder = new CohereEmbedClient(CohereHttpTransport::forEmbed(), $embedModel, $vendorTraceRecorder, $embedBreaker);
+            $reranker = new CohereRerankClient(CohereHttpTransport::forRerank(), $rerankModel, $vendorTraceRecorder, $rerankBreaker);
             // The question text crossing to the embed/rerank vendor is a
             // disclosed crossing like every other vendor crossing (C1/C5) —
             // logged before the call, per DisclosedEvidenceRetrieverWorker.
@@ -580,12 +653,7 @@ class Bootstrap
                 EventAuditDisclosureLogger::forEventAuditLogger(),
                 $physician,
                 $patientPid,
-                new class implements ClockInterface {
-                    public function now(): \DateTimeImmutable
-                    {
-                        return new \DateTimeImmutable();
-                    }
-                },
+                $evidenceClock,
             );
 
             $dispatcher = new SupervisedTurnDispatcher(

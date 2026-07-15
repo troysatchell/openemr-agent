@@ -8,6 +8,17 @@
 >
 > **Deliberately thin.** The expensive thinking lives in the companion docs; this
 > page exists to make scope and success *explicit*, not to repeat them.
+>
+> **Week 2 note (added 2026-07-15, reconciled with `W2_ARCHITECTURE.md`).**
+> This page scopes v1 (Week 1: read-only orientation). Week 2 — the
+> document-shaped week, `USERS.md` §5 UC6/UC7 — has its own
+> acceptance-criteria-shaped seeds at
+> [`docs/W2_PRD_SEEDS.md`](../W2_PRD_SEEDS.md), with rationale in
+> [`W2_ARCHITECTURE.md`](../../W2_ARCHITECTURE.md): same "deliberately thin"
+> split this page uses, not restated here. The one change to this page's own
+> scope statements below: the write-back non-goal is narrowed by a
+> founder-approved, two-write-wide amendment (2026-07-13) — see the
+> non-goals and acceptance-criteria sections.
 
 ---
 
@@ -40,7 +51,13 @@ Read-only **orientation** for the physician's own established patients
 
 ## Explicitly NOT v1 (non-goals)
 
-- **No write-back** — no notes, no orders. Highest risk; separately gated later.
+- **No write-back** — no notes, no orders, no meds. Highest risk; separately
+  gated later (Phase 5). **Scoped Week 2 amendment (founder-approved
+  2026-07-13):** attaching an uploaded source document to its patient, and
+  persisting VLM-extracted facts as observations provenance-linked back to
+  that document, are the two permitted writes — see `W2_ARCHITECTURE.md` §1
+  and `CLAUDE.md` "Bright lines." Clinical write-back (notes, meds, orders)
+  stays out.
 - **No autonomous action.** It orients; the physician decides.
 - **No external / cross-system records** — local EHR only. *Known limitation:*
   partially blinds the "what changed elsewhere" signal. Accepted for v1.
@@ -51,7 +68,9 @@ Read-only **orientation** for the physician's own established patients
 
 Binary / testable:
 
-- **Zero writes** to the record.
+- **Zero writes** to the record, other than the two Week 2 writes named
+  above (document-attach + provenance-linked derived observation) — both
+  audit-logged and round-trip-verified, never clinical content.
 - **Provenance on every surfaced item** (links to source).
 - **Zero false negatives** on the deterministic critical subset — panic labs,
   drug–drug, drug–allergy, open follow-ups — across the golden-chart set

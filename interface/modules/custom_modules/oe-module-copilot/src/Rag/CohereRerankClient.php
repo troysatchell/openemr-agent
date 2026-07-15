@@ -39,6 +39,20 @@
  * still computed from the actual document count rather than hardcoded to 1,
  * so a future larger candidate set is still billed honestly.
  *
+ * Resilience (TRO-47; W2_ARCHITECTURE.md §8; PS-12): an optional trailing
+ * {@see CircuitBreaker} constructor argument (additive — pre-existing call
+ * sites keep working unchanged, breakerless). When supplied and open, the
+ * call fails immediately with {@see RerankUnavailableException} naming the
+ * open dependency WITHOUT invoking the transport (R11: degrade honestly,
+ * never hang on a vendor already known to be down). A transport-level
+ * `\Throwable` is retried exactly once (two attempts total) before
+ * surfacing the typed exception — bounded retry, never an unbounded loop —
+ * and each failing attempt feeds the breaker; a call that ultimately
+ * succeeds (including a recovered retry) feeds it a success. Non-200
+ * responses and malformed/unparseable results are unchanged by this: they
+ * are neither retried nor fed to the breaker, matching the pre-existing
+ * failure mapping below exactly.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -56,10 +70,14 @@ use OpenEMR\Modules\Copilot\Observability\StepRecord;
 use OpenEMR\Modules\Copilot\Observability\TraceContext;
 use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
 use OpenEMR\Modules\Copilot\Observability\VendorUnits;
+use OpenEMR\Modules\Copilot\Resilience\CircuitBreaker;
 
 final readonly class CohereRerankClient
 {
     private const PRICE_VERSION = 'cohere-2026-07';
+
+    /** Bounded retry (TRO-47): one retry on a transport-level fault, two attempts total. */
+    private const MAX_TRANSPORT_ATTEMPTS = 2;
 
     /** Committed Cohere Rerank v2 price (docs/COST_MODEL.md §1) — MEASURED: $2.00 / 1,000 search units. */
     private const USD_PER_SEARCH_UNIT = 0.002;
@@ -84,6 +102,7 @@ final readonly class CohereRerankClient
         private \Closure $transport,
         private string $modelId,
         ?TraceRecorder $recorder = null,
+        private ?CircuitBreaker $breaker = null,
     ) {
         if (trim($this->modelId) === '') {
             throw new \DomainException('CohereRerankClient modelId must be non-blank');
@@ -103,6 +122,12 @@ final readonly class CohereRerankClient
      */
     public function rerank(string $query, array $documents, int $topN, ?TraceContext $span = null): array
     {
+        if ($this->breaker !== null && !$this->breaker->allows()) {
+            throw new RerankUnavailableException(
+                sprintf('The rerank endpoint is unavailable — the "%s" circuit breaker is open', $this->breaker->dependency()),
+            );
+        }
+
         $requestBody = [
             'model' => $this->modelId,
             'query' => $query,
@@ -114,7 +139,7 @@ final readonly class CohereRerankClient
         $start = microtime(true);
 
         try {
-            [$status, $body] = ($this->transport)($requestBody);
+            [$status, $body] = $this->invokeTransport($requestBody);
         } catch (\Throwable $e) {
             $this->recordFailure($span, $startedAt, $start, RerankUnavailableException::class);
 
@@ -141,9 +166,39 @@ final readonly class CohereRerankClient
             throw $e;
         }
 
+        $this->breaker?->recordSuccess();
         $this->recordSuccess($span, $startedAt, $start, count($documents));
 
         return $parsed;
+    }
+
+    /**
+     * Invokes the transport with bounded retry (TRO-47): a transport-level
+     * `\Throwable` is retried exactly once (two attempts total), feeding the
+     * breaker (when present) on each failing attempt, before the original
+     * throwable is rethrown to the caller's own failure mapping. Recursive
+     * rather than looped so the sanctioned "early-return inside a guard,
+     * then an unconditional throw" shape holds structurally — this project's
+     * forbidden-catch-type rule requires a `\Throwable` catch to end in an
+     * unconditional throw.
+     *
+     * @param array<string, mixed> $requestBody
+     *
+     * @return array{int, array<string, mixed>}
+     */
+    private function invokeTransport(array $requestBody, int $attempt = 1): array
+    {
+        try {
+            return ($this->transport)($requestBody);
+        } catch (\Throwable $e) {
+            $this->breaker?->recordFailure();
+
+            if ($attempt < self::MAX_TRANSPORT_ATTEMPTS) {
+                return $this->invokeTransport($requestBody, $attempt + 1);
+            }
+
+            throw $e;
+        }
     }
 
     /**

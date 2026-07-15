@@ -102,3 +102,8 @@ echo "  cost by turn (USD, correlation id — one id per turn):\n";
 foreach ($report->costUsdByCorrelation as $correlationId => $turnCost) {
     echo sprintf("    %-38s %.4f\n", $correlationId, $turnCost);
 }
+
+echo "  route per turn (routesByCorrelation, TRO-45):\n";
+foreach ($report->routesByCorrelation as $correlationId => $route) {
+    echo sprintf("    %-38s %s\n", $correlationId, implode(' -> ', $route));
+}
