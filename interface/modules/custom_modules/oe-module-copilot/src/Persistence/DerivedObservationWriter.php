@@ -61,7 +61,7 @@ final class DerivedObservationWriter
      * it is what lets a future audit tell which extractor produced a given
      * derived observation.
      */
-    public const EXTRACTOR_VERSION = 'vlm-extractor/1.0';
+    public const EXTRACTOR_VERSION = 'vlm-extractor/1.1';
 
     /**
      * Fallback field path recorded in lineage when an analyte's value
@@ -196,8 +196,8 @@ final class DerivedObservationWriter
         $citation = $analyte->value->citation;
         QueryUtils::sqlStatementThrowException(
             'INSERT INTO ' . ExtractionLineageSchema::LINEAGE_TABLE
-                . ' (procedure_result_id, document_id, extractor_version, field_path, page, confidence)'
-                . ' VALUES (?, ?, ?, ?, ?, ?)',
+                . ' (procedure_result_id, document_id, extractor_version, field_path, page, confidence, bbox)'
+                . ' VALUES (?, ?, ?, ?, ?, ?, ?)',
             [
                 $resultId,
                 $documentId,
@@ -205,6 +205,7 @@ final class DerivedObservationWriter
                 $citation->fieldOrChunkId ?? self::FALLBACK_FIELD_PATH,
                 $citation?->pageOrSection,
                 $analyte->value->confidence?->value,
+                $analyte->value->bbox?->toCsv(),
             ],
         );
 

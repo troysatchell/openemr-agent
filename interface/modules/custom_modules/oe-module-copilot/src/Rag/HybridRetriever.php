@@ -47,6 +47,7 @@ declare(strict_types=1);
 namespace OpenEMR\Modules\Copilot\Rag;
 
 use OpenEMR\Common\Database\QueryUtils;
+use OpenEMR\Modules\Copilot\Observability\TraceContext;
 
 final class HybridRetriever
 {
@@ -59,9 +60,14 @@ final class HybridRetriever
     }
 
     /**
+     * @param ?TraceContext $span when supplied (TRO-46), forwarded to
+     *        `CohereRerankClient::rerank()` so the rerank vendor cost is
+     *        recorded on this turn's trace; null (the default) records
+     *        nothing, reproducing every pre-existing call site's behavior.
+     *
      * @return list<RetrievedChunk> at most `$topK`, highest reranked relevance first
      */
-    public function retrieve(string $query, ?string $queryEmbeddingVecText, int $topK): array
+    public function retrieve(string $query, ?string $queryEmbeddingVecText, int $topK, ?TraceContext $span = null): array
     {
         $this->validateQueryAndTopK($query, $topK);
 
@@ -70,7 +76,7 @@ final class HybridRetriever
             return [];
         }
 
-        return $this->rerankCandidates($query, $candidates, $topK);
+        return $this->rerankCandidates($query, $candidates, $topK, $span);
     }
 
     /**
@@ -82,7 +88,7 @@ final class HybridRetriever
      * know *why* it is null; `EvidenceRetrievalService` decides that flag
      * from the embed-call outcome and composes the final `RetrievalOutcome`.
      */
-    public function retrieveWithDegradation(string $query, ?string $queryEmbeddingVecText, int $topK): RetrievalOutcome
+    public function retrieveWithDegradation(string $query, ?string $queryEmbeddingVecText, int $topK, ?TraceContext $span = null): RetrievalOutcome
     {
         $this->validateQueryAndTopK($query, $topK);
 
@@ -92,7 +98,7 @@ final class HybridRetriever
         }
 
         try {
-            return new RetrievalOutcome($this->rerankCandidates($query, $candidates, $topK), false, false);
+            return new RetrievalOutcome($this->rerankCandidates($query, $candidates, $topK, $span), false, false);
         } catch (RerankUnavailableException) {
             return new RetrievalOutcome($this->fallbackOrderedChunks($candidates, $topK), false, true);
         }
@@ -163,10 +169,11 @@ final class HybridRetriever
 
     /**
      * @param list<array{chunk_id: string, source_id: string, heading: string, body: string}> $candidates
+     * @param ?TraceContext $span forwarded to CohereRerankClient::rerank() for TRO-46 cost capture; null records nothing
      *
      * @return list<RetrievedChunk> at most `$topK`, highest reranked relevance first
      */
-    private function rerankCandidates(string $query, array $candidates, int $topK): array
+    private function rerankCandidates(string $query, array $candidates, int $topK, ?TraceContext $span = null): array
     {
         $documents = array_map(
             static fn (array $candidate): string => $candidate['body'],
@@ -174,7 +181,7 @@ final class HybridRetriever
         );
 
         $topN = min($topK, count($candidates));
-        $reranked = $this->reranker->rerank($query, $documents, $topN);
+        $reranked = $this->reranker->rerank($query, $documents, $topN, $span);
 
         $chunks = [];
         foreach (array_slice($reranked, 0, $topK) as $result) {

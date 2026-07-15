@@ -11,6 +11,12 @@
  * no claims), so a PHI leak into the trace would require adding a new key,
  * not merely a careless value.
  *
+ * `vendor_units` (TRO-46) serializes {@see VendorUnits} when a step carries
+ * one — vendor, unit kind, unit count, price version, and the already
+ * computed cost — so non-token vendor cost (Cohere embed / rerank, ...) is
+ * derivable FROM TRACES ALONE, exactly like the existing token-usage
+ * `cost_usd`. `null` when the step carries no vendor units.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -34,6 +40,7 @@ final class JsonlTraceRecorder implements TraceRecorder
     public function record(TraceContext $context, StepRecord $step): void
     {
         $tokenUsage = $step->tokenUsage;
+        $vendorUnits = $step->vendorUnits;
 
         $line = json_encode(
             [
@@ -50,6 +57,13 @@ final class JsonlTraceRecorder implements TraceRecorder
                 'cost_usd' => $tokenUsage?->costUsd,
                 'grounded_count' => $step->groundedCount,
                 'rejected_count' => $step->rejectedCount,
+                'vendor_units' => $vendorUnits === null ? null : [
+                    'vendor' => $vendorUnits->vendor,
+                    'unit_kind' => $vendorUnits->unitKind,
+                    'units' => $vendorUnits->units,
+                    'price_version' => $vendorUnits->priceVersion,
+                    'cost_usd' => $vendorUnits->costUsd,
+                ],
             ],
             JSON_THROW_ON_ERROR,
         );

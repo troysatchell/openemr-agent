@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS mod_copilot_extraction_lineage (
     field_path VARCHAR(191) NOT NULL,
     page VARCHAR(20) NULL,
     confidence DOUBLE NULL,
+    bbox VARCHAR(64) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_mod_copilot_extraction_lineage_result_id (procedure_result_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

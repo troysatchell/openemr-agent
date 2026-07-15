@@ -28,6 +28,11 @@ final readonly class StepRecord
      * groundedCount / rejectedCount (T19) carry the ClaimVerifier verdict on
      * the `ground` step only — counts, never claim content (the trace stays
      * PHI-free by schema). Null on every other step.
+     *
+     * vendorUnits (TRO-46) carries non-token vendor pricing (Cohere embed /
+     * rerank units, ...) on the steps that incur it — {@see VendorUnits}
+     * generalizes {@see TokenUsage} to those vendor models. Null on every
+     * step that carries no such vendor cost.
      */
     public function __construct(
         public string $step,
@@ -38,6 +43,7 @@ final readonly class StepRecord
         public ?TokenUsage $tokenUsage = null,
         public ?int $groundedCount = null,
         public ?int $rejectedCount = null,
+        public ?VendorUnits $vendorUnits = null,
     ) {
         if (trim($step) === '') {
             throw new \DomainException('StepRecord requires a non-blank step name');

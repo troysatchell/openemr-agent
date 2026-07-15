@@ -35,15 +35,15 @@ final readonly class EvidenceRetrieverWorkerImpl implements EvidenceRetrieverWor
     }
 
     /**
-     * The `$workerSpan` argument is accepted to satisfy the port and carried
-     * for the trace wiring that lands with the gate harness — span-tagged
-     * retrieval `StepRecord`s (which sub-call inside `$service->search()`
-     * produced which chunks) are Stage 6 dashboard scope, not this
-     * ticket's. `EvidenceRetrievalService::search()` does not yet accept a
-     * span, so it is not threaded through the delegation below.
+     * `$workerSpan` (TRO-46; the Stage 6 dashboard wiring this class's
+     * original docblock deferred) is forwarded to
+     * `EvidenceRetrievalService::search()` so the embed/rerank `StepRecord`s
+     * it produces are span-tagged children of this worker's own handoff span
+     * — cost is attributable to the turn that incurred it, not merely to
+     * the vendor.
      */
     public function run(string $question, int $topK, TraceContext $workerSpan): RetrievalOutcome
     {
-        return $this->service->search($question, $topK);
+        return $this->service->search($question, $topK, $workerSpan);
     }
 }

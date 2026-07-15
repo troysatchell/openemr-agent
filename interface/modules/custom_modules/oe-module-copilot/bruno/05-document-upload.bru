@@ -1,0 +1,66 @@
+meta {
+  name: Document Upload
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/apis/{{site}}/api/copilot/document
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patientUuid}}",
+    "doc_type": "lab_pdf",
+    "filename": "cbc-panel.pdf",
+    "file_content_b64": "JVBERi0xLjcgdGlueSBicnVubyBwbGFjZWhvbGRlciBieXRlcwo="
+  }
+}
+
+docs {
+  # Document Upload
+
+  UC6 — `POST /api/copilot/document`, one of this module's two sanctioned
+  writes (founder-approved 2026-07-13): attaches the uploaded document to
+  `patient_uuid` (dedupe-by-hash) and runs VLM extraction against the
+  committed `lab_pdf`/`intake_form` JSON Schemas, persisting extracted
+  facts as observations provenance-linked back to this document. Requires
+  the `user/document.write` scope and the `patients`/`med` ACL. Both steps
+  execute as the delegated physician — never a service account.
+
+  ## Content mode (this request)
+
+  `file_content_b64` above is a TINY placeholder base64 payload
+  (`%PDF-1.7 tiny bruno placeholder bytes`) standing in for real PDF/PNG/
+  JPEG bytes — swap it for `base64 < your-file.pdf | tr -d '\n'` when
+  exercising this against a live document. This is the browser-reachable
+  upload shape: a static page cannot supply a server-side path, so it
+  sends raw bytes instead. `filename`'s extension must be one of
+  pdf/png/jpg/jpeg.
+
+  Set `"doc_type": "intake_form"` to exercise the other extraction schema
+  (chief concern, current medications, allergies, family history,
+  demographics — all per-field cited, absent-not-defaulted per D1).
+
+  ## Path mode (alternative, not browser-reachable)
+
+  A server-side-path caller (CLI/tooling with filesystem access to the
+  OpenEMR host) may instead send `"file_path": "/tmp/uploads/cbc-panel.pdf"`
+  + `"file_size_bytes": 48213` in place of `filename`/`file_content_b64`.
+  Exactly one mode is accepted — both or neither is refused as
+  ambiguous/incomplete (400).
+
+  A successful response's `document_id` feeds the Source Resolve request's
+  `lab_pdf:<document_id>#<field_path>` / `intake_form:<document_id>#<field_path>`
+  token — the click-to-source loop this collection demonstrates end to end.
+}
