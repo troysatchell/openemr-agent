@@ -65,10 +65,16 @@ class CostModelDocContractTest extends TestCase
             $this->assertStringContainsString($tier, $doc, "the {$tier} encounters tier exists");
         }
 
-        $qAssumptions = substr_count($doc, 'Q/encounter');
-        $this->assertGreaterThanOrEqual(4, $qAssumptions, 'each of the four tiers states its own Q/encounter assumption');
+        // Per-tier, not global: intro text or another tier's assumption can
+        // never satisfy a tier that lost its own.
+        $sections = preg_split('/^### Tier:/m', $doc);
+        $this->assertIsArray($sections);
+        $tierSections = array_slice($sections, 1);
+        $this->assertCount(4, $tierSections, 'exactly the four projection tiers');
 
-        $inflections = substr_count(strtolower($doc), 'inflection');
-        $this->assertGreaterThanOrEqual(4, $inflections, 'each tier names its architectural inflection');
+        foreach ($tierSections as $section) {
+            $this->assertStringContainsString('Q/encounter', $section, 'every tier states its own Q/encounter assumption');
+            $this->assertStringContainsStringIgnoringCase('inflection', $section, 'every tier names its own architectural inflection');
+        }
     }
 }

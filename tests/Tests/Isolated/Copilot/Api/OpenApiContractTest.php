@@ -133,17 +133,28 @@ class OpenApiContractTest extends TestCase
         $requestFiles = glob($brunoDir . '/*.bru');
         $this->assertIsArray($requestFiles);
 
-        $corpus = '';
+        // Each request is parsed as one METHOD+route pair — a route named in
+        // one file's docs and a verb appearing in another can never
+        // false-satisfy coverage.
+        $requestPairs = [];
         foreach ($requestFiles as $file) {
             $raw = file_get_contents($file);
             $this->assertIsString($raw);
-            $corpus .= $raw . "\n";
+
+            $matches = [];
+            preg_match_all(
+                '/^(get|post|put|delete|patch)\s*\{[^}]*?url:[^\n]*?(\/api\/copilot\/[a-z0-9_\/-]+)/ims',
+                $raw,
+                $matches,
+                PREG_SET_ORDER,
+            );
+            foreach ($matches as $match) {
+                $requestPairs[] = strtoupper($match[1]) . ' ' . $match[2];
+            }
         }
 
         foreach (self::registeredRouteSpecs() as $registered) {
-            [$method, $route] = explode(' ', $registered, 2);
-            $this->assertStringContainsString($route, $corpus, "the Bruno collection exercises {$route}");
-            $this->assertStringContainsStringIgnoringCase(strtolower($method) . ' ', $corpus, "the collection uses the {$method} verb");
+            $this->assertContains($registered, $requestPairs, "the Bruno collection carries a real {$registered} request");
         }
     }
 }
