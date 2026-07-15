@@ -79,3 +79,26 @@ echo "  not applicable (honest absences):\n";
 foreach ($report->notApplicable as $metric => $reason) {
     echo sprintf("    %-14s %s\n", $metric, $reason);
 }
+
+echo "  document ingestion (TRO-45):\n";
+echo sprintf("    count:               %d\n", $report->ingestionCount);
+echo sprintf("    latency p95 ms:      %s\n", $fmt($report->ingestionLatencyP95Ms));
+echo sprintf(
+    "    failure rate:        %s\n",
+    $report->ingestionFailureRate === null ? 'n/a' : sprintf('%.1f%%', $report->ingestionFailureRate * 100),
+);
+
+echo "  supervisor routes (handoff.<route>):\n";
+foreach ($report->routeCounts as $route => $count) {
+    echo sprintf("    %-20s %d\n", $route, $count);
+}
+
+echo "  cost by vendor (USD), TRO-46:\n";
+foreach ($report->vendorCostUsd as $vendor => $vendorCost) {
+    echo sprintf("    %-20s %.4f\n", $vendor, $vendorCost);
+}
+
+echo "  cost by turn (USD, correlation id — one id per turn):\n";
+foreach ($report->costUsdByCorrelation as $correlationId => $turnCost) {
+    echo sprintf("    %-38s %.4f\n", $correlationId, $turnCost);
+}

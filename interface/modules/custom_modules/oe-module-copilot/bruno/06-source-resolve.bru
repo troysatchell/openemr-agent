@@ -1,0 +1,76 @@
+meta {
+  name: Source Resolve
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/apis/{{site}}/api/copilot/source
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "token": "guideline:protocol-htn-v1#htn.bp-target",
+    "patient_uuid": "{{patientUuid}}"
+  }
+}
+
+docs {
+  # Source Resolve
+
+  UC6/UC7 — `POST /api/copilot/source`, the click-to-source resolver.
+  Requires the `user/source.write` scope (deliberately "write", not
+  "read" — the core dispatcher derives a POST's required action as
+  `create`; see Bootstrap::registerApiScopes()) and the `patients`/`med`
+  ACL. Resolves the SAME token minted by `ReferenceIndex::tokenFor()` and
+  shipped in every Turn response's `refs[].token` into the smallest
+  preview a clinician needs to verify a claim — re-grounded against LIVE
+  data on every call, never a cached turn.
+
+  ## This request's body: a guideline token (UC7)
+
+  `guideline:protocol-htn-v1#htn.bp-target` resolves through the real,
+  committed corpus index to the chunk's heading + a bounded snippet of
+  its body — never the whole chunk (minimum-necessary evidence applies to
+  previews too).
+
+  ## Other token shapes to try (swap the body above)
+
+  - Lab-PDF extraction citation (UC6), from a Document Upload response's
+    `document_id`:
+    ```json
+    {
+      "token": "lab_pdf:742#analytes[0].value",
+      "patient_uuid": "{{patientUuid}}"
+    }
+    ```
+    Resolves to `{type: "document", document_id, filename, page, quote,
+    field}` — refused with a generic "unknown source document" message
+    (never a distinguishable error) if the document does not belong to
+    `patient_uuid`, so there's no cross-patient enumeration side channel.
+
+  - Intake-form extraction citation: same shape, `"token":
+    "intake_form:<document_id>#<field_path>"`.
+
+  - Deterministic finding citation: `"token":
+    "detector:panic-potassium-high"` — resolves to a typed, PHI-minimal
+    `{type: "detector", finding_id, label}` with NO database read at all.
+
+  - Plain chart pointer: `"token": "procedure_result:lab-potassium"` —
+    resolves to `{type: "chart", source_type, source_id}`, no value
+    fetched.
+
+  A malformed token (missing `:`), a required-but-missing `#field`
+  fragment, or an unresolvable id all fail loud with a generic 400 — never
+  a guessed preview.
+}

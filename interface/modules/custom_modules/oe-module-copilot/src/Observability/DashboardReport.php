@@ -11,6 +11,18 @@
  * fabricated number. malformedLineCount surfaces trace corruption instead
  * of silently dropping it.
  *
+ * Week 2 additions (TRO-45/TRO-46; W2_ARCHITECTURE.md §8): ingestionCount /
+ * ingestionLatencyP95Ms / ingestionFailureRate summarize the
+ * `document-ingestion` steps the extraction path records; routeCounts
+ * summarizes the supervisor's `handoff.<route>` decisions, keyed by route
+ * suffix; vendorCostUsd and costUsdByCorrelation roll up cost from BOTH
+ * trace-carried cost sources — token-usage cost (existing top-level
+ * `cost_usd`, grouped under the `anthropic` vendor) and non-token vendor
+ * cost ({@see VendorUnits}, grouped under its own vendor) — so total spend
+ * is derivable from the trace alone, per vendor and per encounter
+ * (correlation id). Same n/a-honesty rule as the rest of this report: no
+ * ingestion steps means null latency/failure-rate, never a fabricated zero.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -28,6 +40,9 @@ final readonly class DashboardReport
      * @param array<string, int> $stepCounts
      * @param array<string, int> $stepFailureCounts
      * @param array<string, string> $notApplicable metric => stated reason it cannot be measured
+     * @param array<string, int> $routeCounts supervisor route suffix (from `handoff.<route>`) => count
+     * @param array<string, float> $vendorCostUsd vendor name => total cost USD across both cost sources
+     * @param array<string, float> $costUsdByCorrelation correlation id (encounter) => total cost USD across both cost sources
      */
     public function __construct(
         public int $turnCount,
@@ -45,6 +60,12 @@ final readonly class DashboardReport
         public float $costUsdTotal,
         public int $malformedLineCount,
         public array $notApplicable,
+        public int $ingestionCount = 0,
+        public ?float $ingestionLatencyP95Ms = null,
+        public ?float $ingestionFailureRate = null,
+        public array $routeCounts = [],
+        public array $vendorCostUsd = [],
+        public array $costUsdByCorrelation = [],
     ) {
     }
 }

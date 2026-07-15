@@ -36,6 +36,8 @@ declare(strict_types=1);
 
 namespace OpenEMR\Modules\Copilot\Rag;
 
+use OpenEMR\Modules\Copilot\Observability\TraceContext;
+
 final readonly class EvidenceRetrievalService
 {
     public function __construct(
@@ -57,19 +59,25 @@ final readonly class EvidenceRetrievalService
      * edit — using it as-is here is a retrieval-*quality* concern for the
      * vendor boundary, not a gate-blocking correctness issue for this
      * service.
+     *
+     * `$span` (TRO-46, additive; default null reproduces every pre-existing
+     * call site's behavior — no recording) forwards to both the embed and
+     * rerank vendor boundaries so their cost is captured on THIS turn's
+     * trace, keyed by the same correlation id as the `handoff.
+     * evidence-retriever` step that dispatched this call.
      */
-    public function search(string $query, int $topK): RetrievalOutcome
+    public function search(string $query, int $topK, ?TraceContext $span = null): RetrievalOutcome
     {
         try {
             // Query-side embeddings use Cohere's asymmetric search_query type
             // (documents were indexed as search_document).
-            $vectors = $this->embedder->embed([$query], 'search_query');
+            $vectors = $this->embedder->embed([$query], 'search_query', $span);
             $vecText = '[' . implode(',', $vectors[0] ?? []) . ']';
-            $outcome = $this->retriever->retrieveWithDegradation($query, $vecText, $topK);
+            $outcome = $this->retriever->retrieveWithDegradation($query, $vecText, $topK, $span);
 
             return new RetrievalOutcome($outcome->chunks, false, $outcome->rerankDegraded);
         } catch (EmbeddingUnavailableException) {
-            $outcome = $this->retriever->retrieveWithDegradation($query, null, $topK);
+            $outcome = $this->retriever->retrieveWithDegradation($query, null, $topK, $span);
 
             return new RetrievalOutcome($outcome->chunks, true, $outcome->rerankDegraded);
         }
