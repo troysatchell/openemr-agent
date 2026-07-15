@@ -228,8 +228,18 @@ class CircuitBreakerContractTest extends TestCase
         $this->assertStringContainsStringIgnoringCase('eval regression', $raw);
         $this->assertStringContainsString('5%', $raw);
 
-        $labeled = substr_count($raw, 'MEASURED') + substr_count($raw, 'PENDING MEASUREMENT');
-        $this->assertGreaterThanOrEqual(2, $labeled, 'every SLO number is labeled MEASURED or PENDING MEASUREMENT — invented numbers are worse than none');
+        // Per-section, not global (COPILOT-TEST-001): every target/alarm
+        // section must carry its own label — an intro mention can never
+        // carry a section that lost its own honesty marker.
+        $sections = preg_split('/^### /m', $raw);
+        $this->assertIsArray($sections);
+        $labeledSections = array_slice($sections, 1);
+        $this->assertNotSame([], $labeledSections, 'SLO targets and alarms are organized as ### sections');
+        foreach ($labeledSections as $section) {
+            $hasLabel = str_contains($section, 'MEASURED') || str_contains($section, 'PENDING MEASUREMENT');
+            $heading = strtok($section, "\n");
+            $this->assertTrue($hasLabel, "section '{$heading}' must label its numbers MEASURED or PENDING MEASUREMENT — invented numbers are worse than none");
+        }
     }
 }
 
