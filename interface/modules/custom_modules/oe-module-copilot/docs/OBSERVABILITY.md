@@ -51,7 +51,7 @@ php interface/modules/custom_modules/oe-module-copilot/bin/trace-dashboard.php [
 
 | Metric | Status | Reason |
 |---|---|---|
-| Retry count | N/A | v1 has no retry logic anywhere on the turn path — `LlmUnavailableException` degrades the turn immediately |
+| Retry count | Bounded: 2 attempts per vendor call | TRO-47: one retry on transport faults across the Anthropic/Cohere clients, then the typed unavailability exception degrades the turn honestly; circuit-breaker policy in docs/SLOS.md |
 | Queue depth | N/A | there is no queue — the pre-chart is session-bound (no offline batch in v1, ARCHITECTURE §4) |
 | Cache hit rate | N/A until UC3 | the session-bound pre-chart (Wave 2) adds a `cache_hit` trace field; nothing caches today (every turn re-reads by design, §3.5) |
 
@@ -98,4 +98,5 @@ php interface/modules/custom_modules/oe-module-copilot/bin/trace-dashboard.php [
   A sudden spike feeds the golden-chart set as candidate cases instead.
 - **Cost/token spikes**: reviewed daily against the cost-analysis tiers, not
   paged — no autonomous loop exists that could run away (single turn per
-  user action, no retries).
+  user action; the only retries are TRO-47's bounded per-vendor-call
+  transport retry, max 2 attempts, never a loop).

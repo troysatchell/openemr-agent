@@ -551,9 +551,18 @@ components:
           type: boolean
         checks:
           type: object
-          description: Named check id -> boolean pass/fail (e.g. db, trace_sink, llm).
+          description: Named check id -> boolean pass/fail (e.g. db, trace_sink, llm). Kept for backward compatibility; degraded counts as passing here.
           additionalProperties:
             type: boolean
+        statuses:
+          type: object
+          description: >-
+            Tri-state per dependency (TRO-47): ok | degraded | failed.
+            Degraded names itself (e.g. reranker without COHERE_API_KEY)
+            without failing readiness; failed fails it.
+          additionalProperties:
+            type: string
+            enum: [ok, degraded, failed]
       additionalProperties: false
     Citation:
       type: object
@@ -849,13 +858,14 @@ components:
           description: >-
             OPTIONAL, ADDITIVE: the source document's page image/bytes
             for inline preview rendering, when the resolver supplies
-            one. UNVERIFIED shape as of this writing (parallel change).
+            one. Implemented by SourceResolverEndpoint (TRO-44) and
+            pinned by BboxLineageRoundTripTest.
         document_mime:
           type: string
           nullable: true
           description: >-
             OPTIONAL, ADDITIVE: the MIME type of `document_base64` when
-            present (e.g. application/pdf, image/png). UNVERIFIED as of
+            present (e.g. application/pdf, image/png). Implemented as of
             this writing (parallel change).
       additionalProperties: false
     DetectorSourcePreview:

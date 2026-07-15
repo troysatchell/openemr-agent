@@ -38,6 +38,20 @@
  * never presented as a vendor-measured figure. No recording happens (and no
  * span/recorder need be supplied) on the build-time indexing path.
  *
+ * Resilience (TRO-47; W2_ARCHITECTURE.md §8; PS-12): an optional trailing
+ * {@see CircuitBreaker} constructor argument (additive — pre-existing call
+ * sites, including `CorpusIndexer`, keep working unchanged, breakerless).
+ * When supplied and open, `embed()` fails immediately with
+ * {@see EmbeddingUnavailableException} naming the open dependency WITHOUT
+ * invoking the transport (R11: degrade honestly, never hang on a vendor
+ * already known to be down). A transport-level `\Throwable` is retried
+ * exactly once (two attempts total) before surfacing the typed exception —
+ * bounded retry, never an unbounded loop — and each failing attempt feeds
+ * the breaker; a call that ultimately succeeds (including a recovered
+ * retry) feeds it a success. Non-200 responses and malformed/unparseable
+ * embedding blocks are unchanged by this: they are neither retried nor fed
+ * to the breaker, matching the pre-existing failure mapping below exactly.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -55,6 +69,7 @@ use OpenEMR\Modules\Copilot\Observability\StepRecord;
 use OpenEMR\Modules\Copilot\Observability\TraceContext;
 use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
 use OpenEMR\Modules\Copilot\Observability\VendorUnits;
+use OpenEMR\Modules\Copilot\Resilience\CircuitBreaker;
 
 final readonly class CohereEmbedClient
 {
@@ -69,6 +84,9 @@ final readonly class CohereEmbedClient
      * conservative, ASSUMED, upper-bound heuristic — see the class docblock.
      */
     private const ESTIMATED_CHARS_PER_TOKEN = 4;
+
+    /** Bounded retry (TRO-47): one retry on a transport-level fault, two attempts total. */
+    private const MAX_TRANSPORT_ATTEMPTS = 2;
 
     /**
      * Not promoted: an optional TraceRecorder is accepted as a nullable
@@ -90,6 +108,7 @@ final readonly class CohereEmbedClient
         private \Closure $transport,
         public string $modelId,
         ?TraceRecorder $recorder = null,
+        private ?CircuitBreaker $breaker = null,
     ) {
         if (trim($this->modelId) === '') {
             throw new \DomainException('CohereEmbedClient modelId must be non-blank');
@@ -114,6 +133,12 @@ final readonly class CohereEmbedClient
             throw new \DomainException('CohereEmbedClient inputType must be search_document or search_query');
         }
 
+        if ($this->breaker !== null && !$this->breaker->allows()) {
+            throw new EmbeddingUnavailableException(
+                sprintf('The Cohere embed endpoint is unavailable — the "%s" circuit breaker is open', $this->breaker->dependency()),
+            );
+        }
+
         $requestBody = [
             'model' => $this->modelId,
             'texts' => $texts,
@@ -125,7 +150,7 @@ final readonly class CohereEmbedClient
         $start = microtime(true);
 
         try {
-            [$status, $body] = ($this->transport)($requestBody);
+            [$status, $body] = $this->invokeTransport($requestBody);
         } catch (\Throwable $e) {
             $this->recordFailure($span, $startedAt, $start, EmbeddingUnavailableException::class);
 
@@ -152,9 +177,39 @@ final readonly class CohereEmbedClient
             throw $e;
         }
 
+        $this->breaker?->recordSuccess();
         $this->recordSuccess($span, $startedAt, $start, $texts);
 
         return $vectors;
+    }
+
+    /**
+     * Invokes the transport with bounded retry (TRO-47): a transport-level
+     * `\Throwable` is retried exactly once (two attempts total), feeding the
+     * breaker (when present) on each failing attempt, before the original
+     * throwable is rethrown to the caller's own failure mapping. Recursive
+     * rather than looped so the sanctioned "early-return inside a guard,
+     * then an unconditional throw" shape holds structurally — this project's
+     * forbidden-catch-type rule requires a `\Throwable` catch to end in an
+     * unconditional throw.
+     *
+     * @param array<string, mixed> $requestBody
+     *
+     * @return array{int, array<string, mixed>}
+     */
+    private function invokeTransport(array $requestBody, int $attempt = 1): array
+    {
+        try {
+            return ($this->transport)($requestBody);
+        } catch (\Throwable $e) {
+            $this->breaker?->recordFailure();
+
+            if ($attempt < self::MAX_TRANSPORT_ATTEMPTS) {
+                return $this->invokeTransport($requestBody, $attempt + 1);
+            }
+
+            throw $e;
+        }
     }
 
     /**
