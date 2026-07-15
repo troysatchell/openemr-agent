@@ -158,7 +158,9 @@ class DerivedObservationNamingRoundTripTest extends TestCase
             $code = $resource['code'] ?? null;
             $this->assertIsArray($code, 'Observation.code must be present');
 
-            $coding = $code['coding'][0] ?? null;
+            $codings = $code['coding'] ?? null;
+            $this->assertIsArray($codings, 'the honest null-flavor coding must remain');
+            $coding = $codings[0] ?? null;
             $this->assertIsArray($coding, 'the honest null-flavor coding must remain');
             $this->assertSame(
                 UtilsService::UNKNOWNABLE_CODE_NULL_FLAVOR,
