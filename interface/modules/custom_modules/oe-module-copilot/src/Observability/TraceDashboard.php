@@ -20,6 +20,10 @@
  * ({@see VendorUnits}, its own vendor name) — so cost is derivable from the
  * trace alone.
  *
+ * TRO-45 remainder: also builds routesByCorrelation — per correlation id,
+ * the ORDERED list of `handoff.<route>` suffixes in the order they appear
+ * in the trace — so the per-turn route is a rendered artifact.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -70,6 +74,8 @@ final readonly class TraceDashboard
         $vendorCostUsd = [];
         /** @var array<string, float> $costUsdByCorrelation */
         $costUsdByCorrelation = [];
+        /** @var array<string, list<string>> $routesByCorrelation */
+        $routesByCorrelation = [];
 
         foreach (explode("\n", $jsonl) as $line) {
             if (trim($line) === '') {
@@ -140,6 +146,8 @@ final readonly class TraceDashboard
             if (str_starts_with($step, 'handoff.')) {
                 $route = substr($step, strlen('handoff.'));
                 $routeCounts[$route] = ($routeCounts[$route] ?? 0) + 1;
+                $routesByCorrelation[$correlationId] ??= [];
+                $routesByCorrelation[$correlationId][] = $route;
             }
 
             $vendorUnits = $decoded['vendor_units'] ?? null;
@@ -182,6 +190,7 @@ final readonly class TraceDashboard
             routeCounts: $routeCounts,
             vendorCostUsd: $vendorCostUsd,
             costUsdByCorrelation: $costUsdByCorrelation,
+            routesByCorrelation: $routesByCorrelation,
         );
     }
 

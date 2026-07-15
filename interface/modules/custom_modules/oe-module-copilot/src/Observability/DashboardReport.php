@@ -23,6 +23,13 @@
  * (correlation id). Same n/a-honesty rule as the rest of this report: no
  * ingestion steps means null latency/failure-rate, never a fabricated zero.
  *
+ * TRO-45 remainder (per-turn route legibility): routesByCorrelation makes
+ * the supervisor's routing decisions for EACH turn a rendered artifact, not
+ * an argument -- for every correlation id, the ORDERED list of
+ * `handoff.<route>` suffixes in trace order, so a document-bearing turn's
+ * route visibly differs from a plain follow-up's. Correlations with no
+ * handoff steps simply don't appear; an empty trace yields an empty map.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Clinical Co-Pilot Engineering <copilot@example.com>
@@ -43,6 +50,7 @@ final readonly class DashboardReport
      * @param array<string, int> $routeCounts supervisor route suffix (from `handoff.<route>`) => count
      * @param array<string, float> $vendorCostUsd vendor name => total cost USD across both cost sources
      * @param array<string, float> $costUsdByCorrelation correlation id (encounter) => total cost USD across both cost sources
+     * @param array<string, list<string>> $routesByCorrelation correlation id (turn) => ordered list of `handoff.<route>` suffixes in trace order
      */
     public function __construct(
         public int $turnCount,
@@ -66,6 +74,7 @@ final readonly class DashboardReport
         public array $routeCounts = [],
         public array $vendorCostUsd = [],
         public array $costUsdByCorrelation = [],
+        public array $routesByCorrelation = [],
     ) {
     }
 }
