@@ -57,15 +57,40 @@ php interface/modules/custom_modules/oe-module-copilot/bin/trace-dashboard.php [
 
 ## Alert definitions (graded deliverable — 3 alerts)
 
-> Thresholds below are **provisional regression thresholds — UNSOURCED
-> placeholders** pending the load-test baselines (10/50 concurrent users).
-> Ratchet: measure, set just below current performance, raise as it improves.
-> The SHAPE (what fires, what it means, what on-call does) is the deliverable.
+> Thresholds below are **provisional regression thresholds**. As of
+> 2026-07-16 they have a first measured production baseline
+> (`docs/SLOS.md` §0: turn p95 ≈ 6 s against the 15 s alarm — 2.5×
+> headroom); the 10/50-concurrent-user load-test baselines remain the
+> ratchet's next input. Ratchet: measure, set just below current
+> performance, raise as it improves. The SHAPE (what fires, what it means,
+> what on-call does) is the deliverable.
+
+### Alert checker (wired)
+
+The three alerts below are **evaluated by a committed tool**, not just
+defined: `bin/alert-check.php` reads the same JSONL trace every turn
+writes, filters to a sliding window (default 15 min, matching the alert
+definitions; `--window=0` for the whole file), computes the three
+conditions via the tested `TraceDashboard` aggregator, prints
+`FIRING`/`ok` per alert with the measured value against its threshold, and
+exits non-zero when anything fires — so a cron line (or any scheduler) plus
+a notifier IS the alerting loop:
+
+```
+*/5 * * * * php .../oe-module-copilot/bin/alert-check.php || <notify on-call>
+```
+
+Exit codes: `0` ok (including "no traffic in window" — absence of traffic
+is `/ready`'s job), `2` at least one alert firing, `1` trace unreadable.
+Verified against the real production trace on 2026-07-16 (6 grounded
+turns): all three alerts `ok`, exit 0; and against a synthetic breach
+trace: all three `FIRING`, exit 2.
 
 ### 1. Turn latency p95 > 15s (15-min window)
-- **Means:** the between-patient-moment budget (PHASE0 §2 — p95 stipulated,
-  not yet measured) is blown; the physician stops trusting the panel to be
-  "glanceable" long before it errors.
+- **Means:** the between-patient-moment budget (PHASE0 §2 stipulation; first
+  production baseline measured 2026-07-16 at p95 ≈ 6 s — `docs/SLOS.md` §0)
+  is blown; the physician stops trusting the panel to be "glanceable" long
+  before it errors.
 - **On-call:** compare per-step p95 to localize — `llm` step dominating ⇒
   vendor latency (check status.anthropic.com; consider lowering max_tokens or
   switching configured model id); `retrieve` dominating ⇒ FHIR/DB path (check
