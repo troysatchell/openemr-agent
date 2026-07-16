@@ -37,6 +37,7 @@ declare(strict_types=1);
 namespace OpenEMR\Modules\Copilot\Orchestration;
 
 use OpenEMR\Modules\Copilot\Chart\ChartReader;
+use OpenEMR\Modules\Copilot\Chart\DerivedLabSourceRewriter;
 use OpenEMR\Modules\Copilot\Chart\FhirChartMapper;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Synthesis\ChartSnapshotSynthesizer;
@@ -48,12 +49,19 @@ final class ReadThroughChartSnapshotProvider implements ChartSnapshotProvider
      *        a patient uuid from the DB uuid registry (D7) — the FHIR content
      *        this class reads is never the pid source. Contract:
      *        function (string $patientUuid): int.
+     * @param ?DerivedLabSourceRewriter $labSourceRewriter Optional (the
+     *        ClaimVerifier pattern): absent, the Week 1 read-through path is
+     *        unchanged. Present, lineage-backed labs' Observation refs are
+     *        rewritten to `derived_observation:<procedure_result_id>` so
+     *        their citations resolve through to the source document
+     *        (W2_ARCHITECTURE.md §4 — a derived pointer is never evidence).
      */
     public function __construct(
         private readonly ChartReader $reader,
         private readonly FhirChartMapper $mapper,
         private readonly ChartSnapshotSynthesizer $synthesizer,
         private readonly \Closure $pidResolver,
+        private readonly ?DerivedLabSourceRewriter $labSourceRewriter = null,
     ) {
     }
 
@@ -64,7 +72,7 @@ final class ReadThroughChartSnapshotProvider implements ChartSnapshotProvider
 
         $chart = $this->synthesizer->synthesize(
             $mapped->medications,
-            $mapped->labs,
+            $this->labSourceRewriter?->rewrite($mapped->labs) ?? $mapped->labs,
             $mapped->allergies,
             $mapped->followUps,
         );
