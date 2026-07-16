@@ -1,8 +1,18 @@
 # Clinical Co-Pilot — Demo Runbook
 
-One script sets up everything against the deployed app and prints what to
-paste into the panel. Verified working against production on 2026-07-09
-(full grounded turn in ~7s, DDI must-not-miss firing live).
+**The demo path (2026-07-16): log in → open a patient's chart → click
+"Co-Pilot" in the chart's left menu.** That one click runs the SMART
+EHR-launch (patient-scoped token, no login ceremony, no token/uuid entry)
+and lands in the panel, which renders the glanceable snapshot on arrival —
+must-not-miss cards, new labs since last visit, meds, allergies — every
+entry with click-to-source citations (a document-extracted lab opens its
+source PDF with the bounding-box overlay).
+
+The setup script below seeds the demo data; its hand-minted API tokens
+still drive the non-clinical routes (`ping`/`health`/`ready`) and the seed
+steps, but since the TRO-52 launch binding, the clinical routes
+(`turn`/`snapshot`/`document`/`source`) refuse tokens that carry no
+launch-context patient — clinical calls go through the launched panel.
 
 ## One-time prerequisites (OpenEMR UI, already done on production)
 
@@ -86,27 +96,35 @@ initial seed.
    path: grounded claims with citations, re-checked (not re-shouted)
    critical findings, honest degradation if the model is unavailable.
 2. **Log in to OpenEMR as `dr.tran`**.
-3. Open the **Co-Pilot** tab. Placement depends on the user's ACLs: admin
-   sees it right after **Modules**; a Physicians-group user like dr.tran has
-   no Modules/Admin menus, so for her it sits between **Fees** and
-   **Procedures** (behind the hamburger on narrow windows).
-4. Confirm the **Today's patients** dropdown lists the three seeded
-   appointments; pick one — the glanceable snapshot (must-not-miss cards,
-   unevaluable items, current meds/allergies with citation chips) renders
-   above the ask box.
+3. Open a seeded patient's chart (Calendar → click the appointment, or
+   Finder). In the chart's left menu (Dashboard / History / … / External
+   Data) click **Co-Pilot** — the SMART EHR-launch runs silently (the
+   deployment enables the core `skip_ehr_launch_authorization_flow` for
+   this client: first-party-session verification, registered-scopes-only)
+   and the panel opens already bound to that patient.
+4. The **Patient snapshot** renders on arrival: must-not-miss cards,
+   new labs since last visit, current meds/allergies, honest
+   unevaluable/unknown-currency items — or the explicit earned-quiet
+   banner. Click any citation chip: it resolves live in the Source preview;
+   an extracted lab renders its source PDF page with the bounding-box
+   overlay (TRO-44).
 5. Type a follow-up question in the ask box (e.g. *"Is the anticoagulation
-   current?"*) — the answer renders with the same grounded/rejected
-   citation styling as the token-based panel.
+   current?"*) — grounded claims with citations, re-checked (not
+   re-shouted) critical findings, honest degradation if the model is
+   unavailable.
 
-The token-based `public/panel.html` path (bearer token + manual patient
-uuid) is unchanged and remains the API-consumer smoke path described above —
-useful for scripted checks and for demoing the raw API surface independent
-of an EMR login session.
+The session-bound tab surface (`public/index.php` + `ajax.php`) still
+exists as a fallback but is no longer offered in any menu (2026-07-16):
+the launched panel is the single physician entry. Bare visits to
+`public/panel.html` still show the manual connection fields, but a
+hand-minted token has no launch-context patient and the clinical routes
+refuse it (403) — use the chart-menu launch.
 
 ## Suggested video flow (~3 minutes)
 
-1. **Panel** — paste token + patient UUID, ask *"Anything I should know
-   before I walk in? Is the anticoagulation current?"*
+1. **One click from the chart** — open Alma's chart, click **Co-Pilot**
+   in the left menu; the snapshot renders on arrival. Then ask *"Anything
+   I should know before I walk in? Is the anticoagulation current?"*
 2. Point at the **red must-not-miss card** (warfarin + aspirin DDI):
    detected by deterministic code, not the model — it renders even if the
    model is down.
@@ -133,5 +151,9 @@ of an EMR login session.
   second detector.
 - **401 on copilot routes** → the OAuth client isn't Enabled, or the token
   predates the module's scope registration — mint a fresh one.
+- **403 "Access token is not bound to the requested patient"** → the token
+  has no launch-context patient (hand-minted, or a stale pre-launch
+  session). Relaunch from the patient chart's Co-Pilot menu entry; the
+  clinical routes only accept launch-bound tokens (TRO-52).
 - **503 from `/ready`** → the response body names the failing probe
   (`db`, `trace_sink`, or `llm`).
