@@ -68,6 +68,8 @@ use OpenEMR\Modules\Copilot\Resilience\CircuitBreaker;
 use OpenEMR\Modules\Copilot\Routes\AclRequirement;
 use OpenEMR\Modules\Copilot\Routes\DocumentUploadEndpoint;
 use OpenEMR\Modules\Copilot\Routes\GuardedRouteRegistrar;
+use OpenEMR\Modules\Copilot\Routes\LaunchPatientAccessDeniedException;
+use OpenEMR\Modules\Copilot\Routes\LaunchPatientBinding;
 use OpenEMR\Modules\Copilot\Routes\SourceResolverEndpoint;
 use OpenEMR\Modules\Copilot\Routes\TurnEndpoint;
 use OpenEMR\Modules\Copilot\Synthesis\ChartSnapshotSynthesizer;
@@ -276,6 +278,13 @@ class Bootstrap
                         $input[(string) $key] = $value;
                     }
 
+                    // TRO-52: the effective patient is the token's
+                    // launch-context patient (never the caller's word for
+                    // it) — cross-patient access refuses with 403 before any
+                    // chart read (docs/TRO51_SMART_LAUNCH_DESIGN.md §4.1).
+                    $input = (new LaunchPatientBinding($request->getPatientUUIDString()))
+                        ->enforce($input);
+
                     // Wave K.2 (TRO-44; UC7): an explicit clinician toggle —
                     // never an invented NLP classification of the question —
                     // read here in the route so TurnEndpoint's own contract
@@ -288,6 +297,12 @@ class Bootstrap
                     $endpoint = new TurnEndpoint(self::buildTurnOrchestrator());
 
                     return $endpoint->handle($physician, $input, $evidence);
+                } catch (LaunchPatientAccessDeniedException) {
+                    // Unbound token or cross-patient request (TRO-52) —
+                    // generic by design, neither uuid is echoed (R11).
+                    http_response_code(403);
+
+                    return ['error' => 'Access token is not bound to the requested patient.'];
                 } catch (\DomainException) {
                     // Generic by design — never echo internals (R11).
                     http_response_code(400);
@@ -345,7 +360,20 @@ class Bootstrap
                         $input[(string) $key] = $value;
                     }
 
+                    // TRO-52: bind the write to the token's launch-context
+                    // patient before any attach/extract work (§4.1).
+                    $input = (new LaunchPatientBinding($request->getPatientUUIDString()))
+                        ->enforce($input);
+
                     return $endpoint->handle(new PhysicianContext($username, $userId), $input);
+                } catch (LaunchPatientAccessDeniedException) {
+                    // Unbound token or cross-patient request (TRO-52).
+                    // Caught BEFORE \RuntimeException below — the refusal
+                    // extends it and must never surface as a 500. Generic
+                    // by design, neither uuid is echoed (R11).
+                    http_response_code(403);
+
+                    return ['error' => 'Access token is not bound to the requested patient.'];
                 } catch (\DomainException) {
                     // Generic by design — never echo internals (R11).
                     http_response_code(400);
@@ -415,7 +443,18 @@ class Bootstrap
                         $input[(string) $key] = $value;
                     }
 
+                    // TRO-52: resolving a citation can surface patient
+                    // document content — bind it to the launch patient too.
+                    $input = (new LaunchPatientBinding($request->getPatientUUIDString()))
+                        ->enforce($input);
+
                     return $endpoint->handle(new PhysicianContext($username, $userId), $input);
+                } catch (LaunchPatientAccessDeniedException) {
+                    // Unbound token or cross-patient request (TRO-52) —
+                    // generic by design, neither uuid is echoed (R11).
+                    http_response_code(403);
+
+                    return ['error' => 'Access token is not bound to the requested patient.'];
                 } catch (\DomainException) {
                     // Generic by design — never echo internals (R11); this
                     // also covers the malformed/unresolvable/cross-patient

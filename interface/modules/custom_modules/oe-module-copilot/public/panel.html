@@ -58,11 +58,31 @@
   the exact normalized region the value was read from. `bbox` is a UI
   affordance only (R-W3) — a null bbox renders the page with no overlay,
   honestly, rather than guessing a box.
+
+  SMART EHR-launch mode (TRO-53; docs/TRO51_SMART_LAUNCH_DESIGN.md §4.2,
+  decision D2-confidential): when this page loads carrying `?code&state` from
+  an authorization redirect, it hands the opaque {code, state} to the
+  server-side exchange endpoint (`launch-exchange.php`), which holds the
+  confidential client secret and the session-bound PKCE verifier and performs
+  the exchange — the browser never sees a secret or a verifier. On success the
+  panel fills the base/token/patient fields programmatically and adds
+  `launch-mode` to `<body>`, which hides the manual Connection fieldset (no
+  base/token/UUID entry in a launched session). A failed exchange renders a
+  visible error banner and stays in launch mode — it never falls back to
+  silently showing the manual-entry UI as if nothing happened; the fix is to
+  relaunch from the patient chart, not to hand-enter a token that was never
+  obtained.
 -->
 <style>
   :root { --ink:#1a1f24; --mut:#5a6572; --line:#d9dee4; --crit:#b3261e; --warn:#9a6a00; --ok:#1b6e3c; --rej:#6b7280; --bg:#f7f8fa; --guide:#1c4e80; --guide-bg:#eef6ff; --guide-line:#b9d7f5; --det-bg:#fdf0f0; --det-line:#e3b8b5; }
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+  /* SMART EHR-launch mode: the Connection fieldset is manual-entry chrome
+     that a launched session never needs — base/token/patient all arrive via
+     the server-side confidential code exchange instead. */
+  body.launch-mode #connection-fieldset { display: none; }
+  #launch-context { display: none; background:#eef4ef; border:1px solid #bcd4c2; border-radius:8px; padding:8px 12px; margin:0 0 14px; font-size:13px; color:var(--ok); }
+  body.launch-mode #launch-context { display: block; }
   .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 60px; }
   h1 { font-size: 19px; margin: 0 0 2px; }
   .sub { color: var(--mut); font-size: 13px; margin-bottom: 18px; }
@@ -105,8 +125,9 @@
 <div class="wrap">
   <h1>Clinical Co-Pilot</h1>
   <div class="sub">Read-only orientation panel. Critical findings are code-detected and shown whatever the model says; model prose is shown only when grounded against the live chart.</div>
+  <div id="launch-context"></div>
 
-  <fieldset>
+  <fieldset id="connection-fieldset">
     <legend>Connection</legend>
     <label for="base">API base (site endpoint)</label>
     <input type="text" id="base" value="/apis/default" autocomplete="off">
@@ -540,6 +561,67 @@ $("question").addEventListener("keydown", (e) => {
     ask();
   }
 });
+
+// SMART EHR-launch completion (TRO-53; design D2-confidential): the panel
+// hands the opaque {code, state} back to the server-side exchange endpoint
+// (launch-exchange.php), which holds the client secret and the session-bound
+// PKCE verifier and performs the confidential code exchange. The browser
+// never sees a secret or a verifier. Runs only when the URL actually carries
+// an authorization response — a bare visit leaves the page in its ordinary
+// manual-entry mode untouched.
+async function completeSmartLaunch() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  const returnedState = params.get("state");
+  if (!code || !returnedState) {
+    return;
+  }
+
+  // From here on this IS a launch attempt: the manual Connection fieldset
+  // stays hidden whether the exchange below succeeds or fails — a failed
+  // exchange is reported with a visible banner, never a silent reversion to
+  // manual base/token/UUID entry (the token was never obtained either way).
+  document.body.classList.add("launch-mode");
+  history.replaceState(null, "", location.pathname);
+
+  const context = $("launch-context");
+  try {
+    const resp = await fetch("launch-exchange.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Same-origin: the session cookie carries the server-side verifier +
+      // state this exchange is validated against.
+      credentials: "same-origin",
+      body: JSON.stringify({ code: code, state: returnedState }),
+    });
+    let data = null;
+    try {
+      data = await resp.json();
+    } catch (e) {
+      data = null;
+    }
+    if (!resp.ok || !data || typeof data.access_token !== "string" || !data.access_token) {
+      const detail = (data && data.error) || ("HTTP " + resp.status);
+      throw new Error(detail);
+    }
+
+    // The site segment mirrors ServerConfig's own API base construction; the
+    // panel's guarded-route calls ride the launch-bound token below.
+    $("base").value = "/apis/default";
+    $("token").value = data.access_token;
+    $("uuid").value = typeof data.patient === "string" ? data.patient : "";
+
+    context.textContent = data.patient
+      ? ("Launched from the patient chart — bound to patient " + data.patient + ".")
+      : "Launched from the patient chart, but the authorization server returned no patient context.";
+  } catch (e) {
+    context.replaceChildren(el("div", "banner error",
+      "SMART launch failed: " + (e.message || "the code exchange did not complete")
+      + ". Reopen the co-pilot from the patient chart to try again."));
+  }
+}
+
+completeSmartLaunch();
 </script>
 </body>
 </html>
