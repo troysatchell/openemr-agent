@@ -51,7 +51,45 @@ The live Anthropic vendor call (the actual network round-trip to
 (no network) in every DB-backed test in this repo, by design (PS-2: vendor
 stubs are input-keyed replays, never live network in the gate). **Live-vendor
 network latency is a deployment measurement** (it depends on region, vendor
-load, and payload size) — stated as such, not estimated.
+load, and payload size) — stated as such, not estimated. **Both previously
+unmeasured stages are now measured on production — see the next section.**
+
+### Measured end-to-end on production (2026-07-16)
+
+The two honestly-stated gaps above (the live FHIR chart read, the live
+Anthropic call) are now closed with real numbers from the deployed Railway
+app. Methodology: the real physician flow, scripted — form login → active
+patient set → the chart menu's `launch-from-chart.php` → the SMART
+authorize skip-flow → the confidential code exchange → the guarded routes
+called with the launch-bound token. Client-observed latency is `curl`'s
+`time_total` from the measuring host; server-side per-turn latency is the
+deployment's own JSONL trace for the same calls (`bin/trace-dashboard.php`).
+Small-n, single region/day — a baseline, not a load test.
+
+| Flow | n | p50 | p95 | What's included |
+|---|---|---|---|---|
+| `turn`, client-observed | 6 | 3.22 s | ~6.05 s (max) | Everything: TLS + routing + full FHIR chart read + detectors + minimum-necessary payload + **live Anthropic call** + verification + trace/disclosure writes |
+| `turn`, server-side (trace) | 6 | 2.97 s | 5.82 s | Same turns, measured inside the service — the ~0.25 s delta is client↔edge network |
+| `snapshot`, client-observed | 10 | 0.56 s | ~0.61 s (max) | TLS + routing + **full live FHIR chart read** + detectors + one-pass composition + wire-shaping |
+| `/ready`, client-observed | 3 | 0.21 s | — | All six probes true |
+| SMART launch chain | 1 | 1.41 s | — | Menu click → launch context mint → authorize (skip-flow autosubmit) → server-side code exchange → token |
+
+All 6 turns returned grounded answers (11 grounded claims, 0 rejected),
+0 degraded, 0 errors — real happy-path numbers, not degraded-path ones.
+Subtracting the dev-container downstream measurements above (~6–8 ms for
+snapshot composition), **the live FHIR chart read plus TLS/routing/network
+overhead together account for roughly 0.4–0.5 s** of the snapshot's 0.56 s
+p50 — an upper bound on the chart read itself (no server-side timer brackets
+`ChartReader` alone yet), but the previously unmeasured stage is now bounded.
+The `llm` step dominates the turn (~2.5–5.5 s of it), matching the alert
+playbook's localization guidance.
+
+**Measured production cost (same 6 turns, on the deployed Railway app):**
+8,427 input / 831 output tokens, $0.0629 total per the trace's per-turn cost
+accounting — **≈ $0.010 per grounded turn** (≈ 1,405 in / 139 out tokens per
+turn). The Cost section below predates this measurement and describes the
+**local evaluation environment only** — its "no live vendor call was made"
+statements remain true of that environment, not of production.
 
 ## Cost
 

@@ -10,6 +10,31 @@ usually the trace dashboard, sometimes a committed code constant) or
 doesn't exist yet. This mirrors `docs/COST_MODEL.md` §4's honesty-ledger
 convention, applied to latency and reliability instead of cost.
 
+## 0. Measured production baseline (2026-07-16)
+
+**MEASURED (source: the deployed Railway app, exercised through the real
+SMART launch chain — scripted login → chart-menu launch → confidential code
+exchange → guarded routes with the launch-bound token; client-observed
+`curl` wall-clock plus the server-side JSONL trace for the same calls; full
+methodology and per-step numbers in `docs/W2_LATENCY_COST.md` §"Measured
+end-to-end on production").**
+
+| Flow | n | p50 | p95 | Notes |
+|---|---|---|---|---|
+| turn, client-observed end-to-end | 6 | 3.22 s | ~6.05 s | Live Anthropic call included; all 6 grounded, 0 degraded, 0 errors |
+| turn, server-side (trace) | 6 | 2.97 s | 5.82 s | `llm` step dominates; ~0.25 s client↔server network delta |
+| snapshot, client-observed end-to-end | 10 | 0.56 s | ~0.61 s | Includes the full live FHIR chart read + detectors + composition |
+| `/ready` probe | 3 | 0.21 s | — | All probes true |
+| SMART launch chain (menu click → token) | 1 | 1.41 s | — | launch-from-chart → authorize (skip-flow) → code exchange |
+
+These are small-n baselines from a single region/day, honestly labeled:
+they source the ratchet for the alarm thresholds below (measure, set the
+alarm with explicit headroom **above** current healthy performance, tighten
+as performance improves) rather than replacing the PENDING MEASUREMENT
+postures where no traffic class exists yet (production ingestion volume). Against the turn p95 > 15s alarm, the measured p95 of
+~6 s clears the threshold with 2.5× headroom; `bin/alert-check.php` run
+against this same production trace reports all three alerts ok.
+
 ## 1. Latency SLOs
 
 ### document-ingestion p95
@@ -146,3 +171,38 @@ results, but never silently"). `GET /api/copilot/ready` reports `db`,
   (never `failed`) when absent — evidence retrieval turns degrade honestly
   without it (PS-12's asymmetric-degradation pair), and a missing optional
   vendor key must never take the whole panel offline.
+
+## 5. Disaster recovery — RPO/RTO (as-built, 2026-07-16)
+
+The deployed topology has exactly two persistent, PHI-bearing stores, both
+Railway volumes; everything else is reconstructible from git. Numbers below
+are honest **as-built estimates** for the current demo deployment, not
+aspirational targets — the deployment has **no automated backup schedule
+configured** (none is set up via infra-as-code, and none is visible via the
+Railway CLI as of this date; Railway supports manual and scheduled volume
+backups from its dashboard, which is the first hardening step below).
+
+| Store | Contents | RPO (as-built) | RTO (as-built estimate) |
+|---|---|---|---|
+| `mariadb-volume` (500 MB, ~293 MB used) | All clinical rows — patients, procedure chains **including the derived-observation store and its extraction-lineage table**, the OAuth clients, and the disclosure/audit log | **Unbounded** on volume loss: no scheduled backups exist, so the recovery point is whatever manual snapshot exists (none by default) — stated plainly rather than dressed up | Restore-from-snapshot (once one exists): minutes to remount + service restart, call it **≤ 30 min**. Full rebuild without a snapshot: fresh deploy (~5–20 min measured build) + seed scripts + re-upload/re-extract source documents ≈ **1–2 h**, with all non-seeded clinical data lost |
+| `openemr-volume` (500 MB, ~34 MB used, `sites/`) | Uploaded source documents (the PDFs extraction cites), site config | Same as above — **unbounded** without a snapshot | Same restore path; documents lost without a snapshot are unrecoverable (they exist nowhere else) |
+
+**The derived-observation store's specific recovery story:** derived
+observations are *re-derivable* — each row's extraction-lineage record points
+at its source document, and re-running attach+extract on that document
+regenerates the observations (the supersession reconciler keeps re-extraction
+from double-counting). But this compensating property only holds while the
+source documents survive, and both stores ride volumes on the same platform —
+a correlated platform loss takes the documents and the derivations together.
+So re-derivability softens *database* loss (RPO for derived rows ≈ RPO of the
+document store), not *platform* loss.
+
+**Reconstructible from git (no RPO/RTO exposure):** the golden set and its
+baselines, the guideline corpus sources (re-indexable via
+`bin/index-corpus.php`), all code and schema (module tables are
+`ensureInstalled()` idempotent). The committed-git story covers these; the
+table above is deliberately only about what git cannot restore.
+
+**First hardening step (not yet done):** enable Railway's scheduled volume
+backups (daily) on both volumes → RPO drops from unbounded to ≤ 24 h with no
+code changes; the RTO restore path then has a real snapshot to restore from.
