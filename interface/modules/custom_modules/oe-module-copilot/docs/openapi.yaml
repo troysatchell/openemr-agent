@@ -282,6 +282,86 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/copilot/snapshot:
+    post:
+      operationId: copilotSnapshot
+      tags: [Turn]
+      summary: The glanceable patient snapshot the launched panel renders on arrival.
+      description: >-
+        The same orientation sections the in-EMR tab shows — code-detected
+        must-not-miss findings, the new-labs-since-last-visit delta,
+        current medications and allergies, honest unevaluable and
+        unknown-currency lists, and the earned-quiet flag — composed from
+        one live chart read as the delegated physician (S4/S6, D9 one-pass
+        synthesis). No LLM is involved on this route. POST (not GET)
+        because the core dispatcher derives a POST's required action as
+        create; the scope is declared `user/snapshot.write` for the same
+        reason as `source` — semantically it is still a read.
+      security:
+        - BearerAuth: []
+      x-required-scope: user/snapshot.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                patient_uuid:
+                  type: string
+                  description: >-
+                    FHIR Patient id. Optional for a launch-bound token: the
+                    TRO-52 binding supplies the token's launch-context
+                    patient when this is missing or blank, and refuses a
+                    cross-patient value with 403 before any chart read.
+                    Requests without a bound token must supply it — missing
+                    there is a 400.
+            examples:
+              onArrival:
+                summary: The launched panel's on-arrival snapshot request.
+                value:
+                  patient_uuid: '9f2c9b3a-1234-4a5b-8c9d-0e1f2a3b4c5d'
+      responses:
+        '200':
+          description: >-
+            The glanceable snapshot, or an honest degrade: `snapshot` is
+            null only when `degraded` is true with a stated reason — never
+            a silent empty chart. Every entry carries citation chips
+            (`refs[].token`) resolvable via POST /api/copilot/source.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [degraded, degraded_reason, snapshot]
+                properties:
+                  degraded:
+                    type: boolean
+                  degraded_reason:
+                    type: string
+                    nullable: true
+                  snapshot:
+                    type: object
+                    nullable: true
+                    description: >-
+                      patient demographics, quiet flag, changes_basis, and
+                      the section lists (must_not_miss, unevaluable,
+                      unknown_currency, new_labs, current_medications,
+                      current_allergies), each entry carrying refs
+                      {token, kind, label} — the exact shape
+                      SnapshotEndpoint::handle() documents.
+        '400':
+          description: >-
+            Refused before the chart read: malformed JSON, a non-object
+            body, or blank/missing patient_uuid (generic 400 — never
+            internals, R11).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/copilot/document:
     post:
       operationId: copilotDocumentUpload

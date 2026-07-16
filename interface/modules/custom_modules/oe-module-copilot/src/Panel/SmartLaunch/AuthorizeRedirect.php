@@ -10,7 +10,7 @@
  * {@see IssuerMismatchException} is thrown before any URL is built.
  *
  * SCOPES is minimum-necessary (design §4.1): the module's own route scopes
- * (`user/{ping,health,ready}.read`, `user/{turn,document,source}.write`)
+ * (`user/{ping,health,ready}.read`, `user/{turn,document,source,snapshot}.write`)
  * plus the standard `openid`/`launch`/`api:oemr` triad the SMART EHR-launch
  * handshake requires. No `offline_access` (session-bound v1 — the
  * offline-grant model is deferred, ARCHITECTURE §4) and no broad `user/`
@@ -33,7 +33,7 @@ final class AuthorizeRedirect
     // Untyped const: this project's floor is PHP 8.2 (composer.json), and
     // typed class constants are an 8.3+ feature — matching the untyped
     // constants used elsewhere in this module (e.g. CohereHttpTransport).
-    public const SCOPES = 'openid launch api:oemr user/ping.read user/health.read user/ready.read user/turn.write user/document.write user/source.write';
+    public const SCOPES = 'openid launch api:oemr user/ping.read user/health.read user/ready.read user/turn.write user/document.write user/source.write user/snapshot.write';
 
     private function __construct()
     {

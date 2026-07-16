@@ -1,0 +1,51 @@
+meta {
+  name: Patient Snapshot
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/apis/{{site}}/api/copilot/snapshot
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patientUuid}}"
+  }
+}
+
+docs {
+  # Patient Snapshot
+
+  `POST /api/copilot/snapshot` — the glanceable orientation snapshot the
+  SMART-launched panel renders on arrival (founder call 2026-07-16): the
+  code-detected must-not-miss findings, the new-labs-since-last-visit
+  delta, current medications and allergies, honest unevaluable and
+  unknown-currency lists, and the earned-quiet flag, all composed from ONE
+  live chart read as the delegated physician (S4/S6; D9 one-pass
+  synthesis). No LLM runs on this route.
+
+  Requires the `user/snapshot.write` scope (deliberately "write", not
+  "read" — the core dispatcher derives a POST's required action as
+  `create`; identical constraint and rationale as the Source Resolve
+  route) and the `patients`/`med` ACL.
+
+  In a SMART-launched session the token's launch-context patient binds
+  the request (TRO-52): a `patient_uuid` for anyone else is refused with
+  a generic 403 before any chart read — neither uuid is echoed.
+
+  Every entry's `refs[].token` is click-to-source: resolve it via
+  `POST /api/copilot/source` (see Source Resolve) — a document-extracted
+  lab resolves through its extraction lineage to the source PDF with the
+  stored bounding box for the overlay.
+}

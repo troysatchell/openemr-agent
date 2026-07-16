@@ -23,6 +23,7 @@ namespace OpenEMR\Modules\Copilot;
 use OpenEMR\Common\Database\QueryUtils;
 use OpenEMR\Common\Http\HttpRestRequest;
 use OpenEMR\Common\Uuid\UuidRegistry;
+use OpenEMR\Events\PatientDemographics\RenderEvent;
 use OpenEMR\Events\RestApiExtend\RestApiCreateEvent;
 use OpenEMR\Events\RestApiExtend\RestApiScopeEvent;
 use OpenEMR\Modules\Copilot\Audit\EventAuditDisclosureLogger;
@@ -32,6 +33,7 @@ use OpenEMR\Modules\Copilot\Chart\FhirChartMapper;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirGateway;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirServiceFactory;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
+use OpenEMR\Modules\Copilot\DataTrust\ClinicalDate;
 use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
 use OpenEMR\Modules\Copilot\Eval\DocumentBackedDerivedObservationGrounding;
 use OpenEMR\Modules\Copilot\Eval\NoPendingDocumentsIntakeWorker;
@@ -57,6 +59,7 @@ use OpenEMR\Modules\Copilot\Orchestration\SupervisedTurnDispatcher;
 use OpenEMR\Modules\Copilot\Orchestration\Supervisor;
 use OpenEMR\Modules\Copilot\Orchestration\SupervisorTurnState;
 use OpenEMR\Modules\Copilot\Orchestration\TurnOrchestrator;
+use OpenEMR\Modules\Copilot\Panel\SnapshotEndpoint;
 use OpenEMR\Modules\Copilot\Rag\CohereEmbedClient;
 use OpenEMR\Modules\Copilot\Rag\CohereHttpTransport;
 use OpenEMR\Modules\Copilot\Rag\CohereRerankClient;
@@ -74,9 +77,11 @@ use OpenEMR\Modules\Copilot\Routes\LaunchPatientAccessDeniedException;
 use OpenEMR\Modules\Copilot\Routes\LaunchPatientBinding;
 use OpenEMR\Modules\Copilot\Routes\SourceResolverEndpoint;
 use OpenEMR\Modules\Copilot\Routes\TurnEndpoint;
+use OpenEMR\Modules\Copilot\Snapshot\SnapshotComposer;
 use OpenEMR\Modules\Copilot\Synthesis\ChartSnapshotSynthesizer;
 use OpenEMR\Modules\Copilot\Verification\ClaimVerifier;
 use OpenEMR\RestControllers\Config\RestConfig;
+use OpenEMR\Services\EncounterService;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
@@ -133,6 +138,22 @@ class Bootstrap
     {
         $this->eventDispatcher->addListener(RestApiCreateEvent::EVENT_HANDLE, $this->registerApiRoutes(...));
         $this->eventDispatcher->addListener(RestApiScopeEvent::EVENT_TYPE_GET_SUPPORTED_SCOPES, $this->registerApiScopes(...));
+        $this->eventDispatcher->addListener(RenderEvent::EVENT_SECTION_LIST_RENDER_AFTER, $this->hideSmartLaunchCard(...));
+    }
+
+    /**
+     * Hides the patient summary's "SMART Enabled Apps" card (founder call
+     * 2026-07-16): the chart menu's one-click Co-Pilot entry replaced the
+     * card as the launch surface, and the co-pilot is this deployment's only
+     * SMART client, so the card is pure clutter. CSS-hidden via this
+     * module's own render listener — never a core template edit — so
+     * removing this listener restores the card unchanged. The card body
+     * carries id="smart" (SmartLaunchController's viewArgs); :has() hides
+     * its whole <section>, the bare #smart rule is the fallback.
+     */
+    public function hideSmartLaunchCard(RenderEvent $event): void
+    {
+        echo '<style>section:has(#smart), #smart { display: none; }</style>';
     }
 
     /**
@@ -164,6 +185,10 @@ class Bootstrap
         // 2026-07-14). Semantically it is still a read-only resolve;
         // tightening the route to a read-scoped verb is tracked separately.
         $event->addScope('user', 'source', 'write');
+        // Same POST-derives-create constraint as 'source': the snapshot
+        // route is semantically a read, declared 'write' so the
+        // create-action check is satisfiable.
+        $event->addScope('user', 'snapshot', 'write');
     }
 
     public function registerApiRoutes(RestApiCreateEvent $event): void
@@ -310,6 +335,80 @@ class Bootstrap
                     http_response_code(400);
 
                     return ['error' => 'Invalid request: patient_uuid and question are required.'];
+                }
+            }
+        );
+
+        $registrar->register(
+            'POST /api/copilot/snapshot',
+            // The launched panel's on-arrival glanceable snapshot (founder
+            // call 2026-07-16): the same SnapshotEndpoint the in-EMR tab
+            // consumes via ajax.php, exposed on the guarded REST surface so
+            // the SMART-launched panel can render new-labs/meds/allergies
+            // without a question. Same ACL and launch-patient binding as
+            // the turn route; POST because the core dispatcher's
+            // create-action scope derivation makes GET+read unreachable for
+            // module routes (see registerApiScopes).
+            new AclRequirement('patients', 'med'),
+            static function (HttpRestRequest $request): array {
+                $user = $request->getRequestUser();
+                $username = is_string($user['username'] ?? null) ? $user['username'] : '';
+                $userId = $request->getRequestUserId();
+                if (trim($username) === '' || $userId === null) {
+                    http_response_code(403);
+
+                    return ['error' => 'No authenticated user principal for this request.'];
+                }
+
+                try {
+                    $decoded = json_decode($request->getContent(), true, 16, JSON_THROW_ON_ERROR);
+                } catch (\JsonException) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be valid JSON.'];
+                }
+                if (!is_array($decoded)) {
+                    http_response_code(400);
+
+                    return ['error' => 'Request body must be a JSON object.'];
+                }
+
+                try {
+                    $physician = new PhysicianContext($username, $userId);
+
+                    $input = [];
+                    foreach ($decoded as $key => $value) {
+                        $input[(string) $key] = $value;
+                    }
+
+                    // TRO-52: the effective patient is the token's
+                    // launch-context patient — identical binding to the
+                    // turn route.
+                    $input = (new LaunchPatientBinding($request->getPatientUUIDString()))
+                        ->enforce($input);
+
+                    $endpoint = new SnapshotEndpoint(
+                        self::buildChartSnapshotProvider(),
+                        CriticalSubsetDetectors::withDraftTables(),
+                        new SnapshotComposer(),
+                        self::lastVisitResolver(...),
+                        new class implements ClockInterface {
+                            public function now(): \DateTimeImmutable
+                            {
+                                return new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+                            }
+                        },
+                    );
+
+                    return $endpoint->handle($physician, $input);
+                } catch (LaunchPatientAccessDeniedException) {
+                    http_response_code(403);
+
+                    return ['error' => 'Access token is not bound to the requested patient.'];
+                } catch (\DomainException) {
+                    http_response_code(400);
+
+                    return ['error' => 'Invalid request: patient_uuid is required.'];
                 }
             }
         );
@@ -493,6 +592,21 @@ class Bootstrap
             // (W2_ARCHITECTURE.md §4).
             DerivedLabSourceRewriter::forLiveLookup(),
         );
+    }
+
+    /**
+     * Last-visit resolver for the snapshot route: the most recent encounter
+     * date for a pid via EncounterService — never raw SQL against
+     * form_encounter — parsed defensively via ClinicalDate (D0/D6). The
+     * same contract ajax.php's session surface wires for the in-EMR tab;
+     * kept as one named method here so the two surfaces cannot drift.
+     */
+    private static function lastVisitResolver(int $pid): ?\DateTimeImmutable
+    {
+        $encounter = (new EncounterService())->getMostRecentEncounterForPatient($pid);
+        $rawDate = $encounter['date'] ?? null;
+
+        return ClinicalDate::tryParse(is_string($rawDate) ? $rawDate : null);
     }
 
     /**
