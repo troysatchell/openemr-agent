@@ -34,6 +34,15 @@
  *     token endpoint directly, never a client secret in the browser) and
  *     never asks for base/token/UUID in launch mode (TRO-53).
  *
+ * RE-FROZEN 2026-07-16 (documented per the freeze protocol): the founder
+ * directed an on-arrival glanceable snapshot for the launched panel, adding
+ * a FOURTH clinical route (POST /api/copilot/snapshot) that — correctly —
+ * enforces the same launch-patient binding as turn/document/source. The
+ * binding count pin moves 3 -> 4 to match the deliberately grown surface.
+ * Design-decision-driven contract change, NOT greening a red gate: the
+ * binding guarantee itself is unchanged, and NOT binding the new route
+ * would have been the actual regression.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @license   https://github.com/openemr/openemr/blob/master/LICENSE GNU General Public License 3
@@ -69,10 +78,16 @@ class LaunchBindingWiringContractTest extends TestCase
         $this->assertStringContainsString('LaunchPatientBinding', $bootstrap, 'the binding guard is composed in the route layer');
         $this->assertStringContainsString('getPatientUUIDString', $bootstrap, 'the bound patient comes from the token launch context, never the caller');
         $this->assertStringContainsString('LaunchPatientAccessDeniedException', $bootstrap, 'binding refusals are caught distinctly');
+        // Each clinical route is individually declared AND the enforce count
+        // matches their number, so an extra enforce on one route can never
+        // mask a missing declaration or an unguarded route.
+        foreach (['turn', 'snapshot', 'document', 'source'] as $route) {
+            $this->assertStringContainsString("'POST /api/copilot/{$route}'", $bootstrap, "the {$route} route is declared");
+        }
         $this->assertSame(
-            3,
+            4,
             substr_count($bootstrap, '->enforce('),
-            'exactly the three clinical routes (turn, document, source) enforce the binding'
+            'exactly the four clinical routes (turn, snapshot, document, source) enforce the binding'
         );
     }
 

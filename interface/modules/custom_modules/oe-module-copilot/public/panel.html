@@ -127,6 +127,12 @@
   <div class="sub">Read-only orientation panel. Critical findings are code-detected and shown whatever the model says; model prose is shown only when grounded against the live chart.</div>
   <div id="launch-context"></div>
 
+  <fieldset id="snapshot-fieldset" style="display:none">
+    <legend>Patient snapshot</legend>
+    <div class="hint">Rendered on arrival from the live chart — critical findings are code-detected, and every entry carries click-to-source citations.</div>
+    <div id="snapshot"></div>
+  </fieldset>
+
   <fieldset id="connection-fieldset">
     <legend>Connection</legend>
     <label for="base">API base (site endpoint)</label>
@@ -562,6 +568,125 @@ $("question").addEventListener("keydown", (e) => {
   }
 });
 
+// On-arrival glanceable snapshot (founder call 2026-07-16): a launched
+// session renders the same sections the in-EMR tab shows — must-not-miss,
+// new labs since last visit, current meds/allergies, unevaluable and
+// unknown-currency items — via the guarded snapshot route, so orientation
+// needs no question. The sections reuse the turn renderers' visual
+// vocabulary, and every chip is click-to-source: a document-extracted lab
+// opens its PDF overlay straight from arrival. Ask stays follow-up, not
+// retrieval.
+async function loadSnapshot() {
+  const uuid = $("uuid").value.trim();
+  if (!uuid) return;
+  const box = $("snapshot");
+  $("snapshot-fieldset").style.display = "";
+  box.replaceChildren(el("div", "hint", "Reading the live chart…"));
+  try {
+    const data = await apiPost("/api/copilot/snapshot", { patient_uuid: uuid });
+    renderSnapshot(data);
+  } catch (e) {
+    box.replaceChildren(el("div", "banner error", e.message || "The snapshot could not be read."));
+  }
+}
+
+function snapshotZone(title) {
+  const zone = el("section", "zone");
+  zone.appendChild(el("h2", null, title));
+  return zone;
+}
+
+function renderSnapshot(data) {
+  const box = $("snapshot");
+  box.replaceChildren();
+  if (data && data.degraded) {
+    box.appendChild(el("div", "banner error",
+      "Snapshot degraded: " + (data.degraded_reason || "the chart could not be fully read.")));
+  }
+  const snap = data && data.snapshot;
+  if (!snap) {
+    if (!(data && data.degraded)) {
+      box.appendChild(el("div", "banner error", "No snapshot was returned."));
+    }
+    return;
+  }
+
+  if ((snap.must_not_miss || []).length) {
+    const zone = snapshotZone("Must not miss — detected in code, not by the model");
+    snap.must_not_miss.forEach((f) => {
+      const item = el("div", "crit-item");
+      item.appendChild(el("span", "type", f.type));
+      item.appendChild(el("span", "summary", f.summary));
+      item.appendChild(refChips(f.refs));
+      zone.appendChild(item);
+    });
+    box.appendChild(zone);
+  }
+
+  if ((snap.unevaluable || []).length) {
+    const zone = snapshotZone("Could not be evaluated — check manually");
+    snap.unevaluable.forEach((u) => {
+      const item = el("div", "unev-item");
+      item.appendChild(el("div", null, u.reason));
+      item.appendChild(refChips(u.refs));
+      zone.appendChild(item);
+    });
+    box.appendChild(zone);
+  }
+
+  if ((snap.unknown_currency || []).length) {
+    const zone = snapshotZone("Unknown currency — recorded, but staleness cannot be established");
+    snap.unknown_currency.forEach((u) => {
+      const item = el("div", "claim");
+      item.appendChild(el("div", null, u.kind + ": " + u.name));
+      item.appendChild(refChips(u.refs));
+      zone.appendChild(item);
+    });
+    box.appendChild(zone);
+  }
+
+  if ((snap.new_labs || []).length) {
+    const zone = snapshotZone("New labs since last visit");
+    snap.new_labs.forEach((l) => {
+      const item = el("div", "claim");
+      const value = (l.value === null || l.value === undefined) ? "(no numeric value)" : l.value;
+      const unit = l.unit ? (" " + l.unit) : "";
+      const when = l.resulted_at ? (" — " + l.resulted_at) : "";
+      item.appendChild(el("div", null, l.analyte + ": " + value + unit + when));
+      item.appendChild(refChips(l.refs));
+      zone.appendChild(item);
+    });
+    box.appendChild(zone);
+  }
+
+  if ((snap.current_medications || []).length) {
+    const zone = snapshotZone("Current medications");
+    snap.current_medications.forEach((m) => {
+      const item = el("div", "claim");
+      item.appendChild(el("div", null, m.name));
+      item.appendChild(refChips(m.refs));
+      zone.appendChild(item);
+    });
+    box.appendChild(zone);
+  }
+
+  if ((snap.current_allergies || []).length) {
+    const zone = snapshotZone("Current allergies");
+    snap.current_allergies.forEach((a) => {
+      const item = el("div", "claim");
+      item.appendChild(el("div", null, a.substance));
+      item.appendChild(refChips(a.refs));
+      zone.appendChild(item);
+    });
+    box.appendChild(zone);
+  }
+
+  if (snap.quiet) {
+    box.appendChild(el("div", "banner quiet",
+      "Nothing to surface right now — no critical findings, nothing unevaluable, nothing of unknown currency, no new labs since the last visit. Silence here is a checked result, not an error."));
+  }
+}
+
 // SMART EHR-launch completion (TRO-53; design D2-confidential): the panel
 // hands the opaque {code, state} back to the server-side exchange endpoint
 // (launch-exchange.php), which holds the client secret and the session-bound
@@ -614,6 +739,10 @@ async function completeSmartLaunch() {
     context.textContent = data.patient
       ? ("Launched from the patient chart — bound to patient " + data.patient + ".")
       : "Launched from the patient chart, but the authorization server returned no patient context.";
+
+    // Orientation on arrival: render the glanceable snapshot immediately —
+    // no question required (founder call 2026-07-16).
+    loadSnapshot();
   } catch (e) {
     context.replaceChildren(el("div", "banner error",
       "SMART launch failed: " + (e.message || "the code exchange did not complete")
