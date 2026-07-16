@@ -27,11 +27,13 @@ use OpenEMR\Events\RestApiExtend\RestApiCreateEvent;
 use OpenEMR\Events\RestApiExtend\RestApiScopeEvent;
 use OpenEMR\Modules\Copilot\Audit\EventAuditDisclosureLogger;
 use OpenEMR\Modules\Copilot\Chart\ChartReader;
+use OpenEMR\Modules\Copilot\Chart\DerivedLabSourceRewriter;
 use OpenEMR\Modules\Copilot\Chart\FhirChartMapper;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirGateway;
 use OpenEMR\Modules\Copilot\Chart\OpenEmrFhirServiceFactory;
 use OpenEMR\Modules\Copilot\Chart\PhysicianContext;
 use OpenEMR\Modules\Copilot\Detectors\CriticalSubsetDetectors;
+use OpenEMR\Modules\Copilot\Eval\DocumentBackedDerivedObservationGrounding;
 use OpenEMR\Modules\Copilot\Eval\NoPendingDocumentsIntakeWorker;
 use OpenEMR\Modules\Copilot\Ingestion\DocumentIngestion;
 use OpenEMR\Modules\Copilot\Ingestion\DocumentIngestionService;
@@ -485,6 +487,11 @@ class Bootstrap
             new FhirChartMapper(),
             new ChartSnapshotSynthesizer(),
             self::resolvePatientPid(...),
+            // Lineage-backed labs mint `derived_observation:<result_id>` so a
+            // citation chip resolves through to its source document (page,
+            // field, bbox) instead of dead-ending at the derived pointer
+            // (W2_ARCHITECTURE.md §4).
+            DerivedLabSourceRewriter::forLiveLookup(),
         );
     }
 
@@ -558,7 +565,10 @@ class Bootstrap
             CopilotTask::FollowUpQa,
             EventAuditDisclosureLogger::forEventAuditLogger(),
             $llm,
-            new ClaimVerifier(),
+            // The grounding port makes derived_observation refs verifiable:
+            // without it the verifier fails closed on every one (PS-6), and
+            // the live mint now produces them for lineage-backed labs.
+            new ClaimVerifier(new DocumentBackedDerivedObservationGrounding()),
             $clock,
             new JsonlTraceRecorder(self::defaultTracePath()),
         );

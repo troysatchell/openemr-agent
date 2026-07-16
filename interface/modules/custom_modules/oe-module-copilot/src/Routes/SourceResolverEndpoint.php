@@ -42,9 +42,14 @@
  *                      (`Eval\CriticalSubsetLabels` + the real deterministic
  *                      detectors) — no DB read at all for this branch:
  *                      `{type: 'detector', finding_id, label}`.
- *   - `procedure_result` / `lists` -> a PHI-minimal chart-reference pointer,
- *                      no value fetched:
- *                      `{type: 'chart', source_type, source_id}`.
+ *   - `procedure_result` / `lists` / `Observation` / `MedicationRequest` /
+ *                      `AllergyIntolerance` (the FHIR types the live chart
+ *                      mint labels its refs with) -> a PHI-minimal
+ *                      chart-reference pointer, no value fetched:
+ *                      `{type: 'chart', source_type, source_id}`. A
+ *                      lineage-backed lab never reaches this arm — the mint
+ *                      rewrites it to `derived_observation` so it grounds in
+ *                      its source document.
  *
  * Any other sourceType, a malformed token (no ':'), a required-but-missing
  * '#' fragment, or an unresolvable id all throw `\DomainException` with a
@@ -145,7 +150,13 @@ final class SourceResolverEndpoint
             'intake_form' => $this->resolveDocumentExtraction('intake_form', $parsed['sourceId'], $parsed['fieldOrChunkId'], $patientUuid),
             'derived_observation' => $this->resolveDerivedObservation($parsed['sourceId'], $patientUuid),
             'detector' => $this->resolveDetector($parsed['sourceId']),
-            'procedure_result', 'lists' => $this->resolveChart($parsed['sourceType'], $parsed['sourceId']),
+            // The FHIR resource types the live chart mint labels its refs
+            // with (FhirChartMapper) resolve like any other chart pointer —
+            // a typed, PHI-minimal echo, never a data read. Lineage-backed
+            // labs never reach this arm: DerivedLabSourceRewriter rewrites
+            // them to `derived_observation` at the mint.
+            'procedure_result', 'lists', 'Observation', 'MedicationRequest', 'AllergyIntolerance'
+                => $this->resolveChart($parsed['sourceType'], $parsed['sourceId']),
             default => throw new \DomainException('Unsupported source token type'),
         };
     }
