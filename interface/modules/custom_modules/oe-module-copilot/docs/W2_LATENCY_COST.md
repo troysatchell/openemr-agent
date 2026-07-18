@@ -77,7 +77,7 @@ over the same trace reports all three alerts `ok`. The first latency lever at sc
 the LLM input (and therefore the dominant step's wall-clock), rather than
 adding request parallelism.
 
-## Actual development spend
+## Actual development spend (estimated)
 
 **Mechanism MEASURED; total ESTIMATED (to be reconciled against the vendor
 billing dashboards).** Vendor spend during development was not billed to a
