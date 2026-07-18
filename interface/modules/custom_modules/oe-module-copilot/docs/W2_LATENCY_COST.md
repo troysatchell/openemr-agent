@@ -50,10 +50,13 @@ capacity; a production-window measurement or load test supersedes it.
 - **The turn bottleneck is the `llm` step** (the Anthropic answer-model
   round-trip). The snapshot path does the full live FHIR chart read + the
   deterministic critical-subset detectors + composition with **no** model call
-  and finishes sub-second (p50 0.56 s); a turn over the same chart is p50
-  2.97 s server-side. The ~2.4 s difference is essentially the one outbound LLM
-  call — confirmed by the trace's per-step `llm` p50/p95 dominating every other
-  step (`docs/OBSERVABILITY.md`; `TraceDashboard::summarize()`).
+  and finishes sub-second (p50 0.56 s client-observed); a turn over the same
+  chart is p50 3.22 s client-observed. Both flows cross the same client↔server
+  network, so their ~2.7 s difference nets that out and reflects the work a
+  turn adds over a snapshot — dominated by the one outbound LLM call, and
+  corroborated by the server-side trace, where the `llm` step's p50/p95
+  dominates every other step (`docs/OBSERVABILITY.md`;
+  `TraceDashboard::summarize()`).
 - **Client↔server delta ≈ 0.25 s** (turn p95 6.05 s client vs 5.82 s
   server) — TLS + network to Railway, not application work.
 - **The snapshot (zero-RAG) path is detector-bound and cheap.** Deterministic

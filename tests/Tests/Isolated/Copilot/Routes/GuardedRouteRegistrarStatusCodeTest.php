@@ -55,8 +55,10 @@ class GuardedRouteRegistrarStatusCodeTest extends TestCase
 
     /**
      * @param array<string, mixed> $body
+     *
+     * @return array<mixed, mixed>|Response
      */
-    private function invoke(?int $status, array $body): mixed
+    private function invoke(?int $status, array $body): array|Response
     {
         // A null status models a handler that sets no code at all (the real
         // success path, e.g. /ping) — distinct from a handler that explicitly
@@ -74,7 +76,13 @@ class GuardedRouteRegistrarStatusCodeTest extends TestCase
             }
         );
 
-        return ($registrar->routes()['POST /api/copilot/thing'])(new HttpRestRequest());
+        $result = ($registrar->routes()['POST /api/copilot/thing'])(new HttpRestRequest());
+        // The wrapper's contract for this helper: the handler's array, or a
+        // JsonResponse (a Response) when an error status was converted. Narrow
+        // the generic mixed dispatch return to the helper's declared type.
+        assert(is_array($result) || $result instanceof Response);
+
+        return $result;
     }
 
     /**
