@@ -119,6 +119,11 @@
   #doc-preview { position:relative; margin-top:10px; display:inline-block; }
   #doc-preview canvas { display:block; max-width:100%; border:1px solid var(--line); border-radius:6px; }
   .bbox-overlay { position:absolute; border:2px solid var(--crit); background:rgba(179,38,30,.12); pointer-events:none; }
+  /* Chat-style composer: pinned near the viewport bottom so the input sits
+     below the answer stream (chat-app convention) and stays reachable while
+     the answer above scrolls. Falls back to a normal block if sticky is
+     unsupported. */
+  #composer { position: sticky; bottom: 8px; z-index: 5; box-shadow: 0 6px 20px rgba(20,40,60,.10); }
 </style>
 </head>
 <body>
@@ -157,20 +162,23 @@
     <div id="upload-status"></div>
   </fieldset>
 
-  <fieldset>
-    <legend>Ask about this patient</legend>
-    <textarea id="question" placeholder="e.g. Anything new on the potassium trend? Is the anticoagulation current?"></textarea>
-    <label for="ask-evidence" class="evidence-toggle"><input type="checkbox" id="ask-evidence"> Include guideline evidence</label>
-    <button id="ask">Ask</button>
-    <div class="hint">Every turn re-reads the live chart. Prior turns inform phrasing only — never facts. "Include guideline evidence" is an explicit ask (UC7) — never inferred from the question text — that runs the supervised evidence-retriever for this turn only.</div>
-  </fieldset>
-
   <div id="out"></div>
 
   <fieldset>
     <legend>Source preview</legend>
     <div class="hint">Click any citation chip above to verify its source here — every click re-resolves against live data, never a cached turn.</div>
     <div id="source-preview"></div>
+  </fieldset>
+
+  <!-- Chat composer moved below the answer stream and pinned to the bottom
+       (chat-app convention): reading an answer then asking the next question
+       stays one downward flow, and the input is always reachable. -->
+  <fieldset id="composer">
+    <legend>Ask about this patient</legend>
+    <textarea id="question" placeholder="e.g. Anything new on the potassium trend? Is the anticoagulation current?"></textarea>
+    <label for="ask-evidence" class="evidence-toggle"><input type="checkbox" id="ask-evidence"> Include guideline evidence</label>
+    <button id="ask">Ask</button>
+    <div class="hint">Every turn re-reads the live chart. Prior turns inform phrasing only — never facts. "Include guideline evidence" is an explicit ask (UC7) — never inferred from the question text — that runs the supervised evidence-retriever for this turn only.</div>
   </fieldset>
 </div>
 
@@ -489,6 +497,9 @@ async function ask() {
       ask_evidence: $("ask-evidence").checked,
     });
     render(turn);
+    // Bring the fresh answer into view above the pinned composer, so a new
+    // turn reads top-down like a chat exchange.
+    out.scrollIntoView({ behavior: "smooth", block: "start" });
     const groundedText = turn.answer && turn.answer.grounded ? turn.answer.grounded.map((c) => c.text).join(" ") : "(no grounded answer)";
     priorTurns.push("Q: " + question + " A: " + groundedText);
   } catch (e) {
