@@ -68,6 +68,11 @@ final readonly class TraceDashboard
         $ingestionFailureCount = 0;
         /** @var list<float> $ingestionDurations */
         $ingestionDurations = [];
+        // RAG retrieval latency = per-turn sum of the two evidence-retriever
+        // vendor legs (embed + rerank), keyed by correlation so a turn's
+        // retrieval is one measurement, not two.
+        /** @var array<string, float> $retrievalDurationsByCorrelation */
+        $retrievalDurationsByCorrelation = [];
         /** @var array<string, int> $routeCounts */
         $routeCounts = [];
         /** @var array<string, float> $vendorCostUsd */
@@ -143,6 +148,18 @@ final readonly class TraceDashboard
                 }
             }
 
+            // The RAG retrieval leg is the evidence-retriever's two vendor
+            // calls; sum their durations per turn so retrieval latency is one
+            // number per retrieval, mirroring the per-turn latency roll-up.
+            if ($step === 'embed' || $step === 'rerank') {
+                if (is_int($duration) || is_float($duration)) {
+                    $retrievalDurationsByCorrelation[$correlationId] =
+                        ($retrievalDurationsByCorrelation[$correlationId] ?? 0.0) + (float) $duration;
+                } else {
+                    $retrievalDurationsByCorrelation[$correlationId] ??= 0.0;
+                }
+            }
+
             if (str_starts_with($step, 'handoff.')) {
                 $route = substr($step, strlen('handoff.'));
                 $routeCounts[$route] = ($routeCounts[$route] ?? 0) + 1;
@@ -168,6 +185,9 @@ final readonly class TraceDashboard
 
         sort($ingestionDurations);
 
+        $retrievalDurations = array_values($retrievalDurationsByCorrelation);
+        sort($retrievalDurations);
+
         return new DashboardReport(
             turnCount: $turnCount,
             errorTurnCount: $errorTurnCount,
@@ -191,6 +211,7 @@ final readonly class TraceDashboard
             vendorCostUsd: $vendorCostUsd,
             costUsdByCorrelation: $costUsdByCorrelation,
             routesByCorrelation: $routesByCorrelation,
+            retrievalLatencyP95Ms: self::nearestRank($retrievalDurations, 95),
         );
     }
 
