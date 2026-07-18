@@ -11,6 +11,16 @@
  * before the handler. A wrapped route invoked without an HttpRestRequest
  * fails closed without evaluating anything.
  *
+ * The same wrapper is also the module's error-status seam (TRO-57). OpenEMR's
+ * REST view-renderer (ViewRendererListener) wraps a bare array return in a
+ * *200* JsonResponse, silently discarding any http_response_code() an error
+ * branch set inside a handler — so malformed-JSON 400s, launch-binding 403s,
+ * and /ready 503s all shipped as HTTP 200 with an error body. Because every
+ * copilot route passes through this one wrapper, it is the correct place to
+ * consume that legacy request-global and hand the kernel a typed Response it
+ * renders verbatim (confining the superglobal read to the outermost boundary,
+ * per CLAUDE.md), without editing every handler branch.
+ *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
  * @author    Troy Satchell <troysatchell@gmail.com>
@@ -24,6 +34,7 @@ namespace OpenEMR\Modules\Copilot\Routes;
 
 use OpenEMR\Common\Http\HttpRestRequest;
 use OpenEMR\Events\RestApiExtend\RestApiCreateEvent;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 final class GuardedRouteRegistrar
@@ -77,7 +88,33 @@ final class GuardedRouteRegistrar
                 );
             }
             $authorizationCheck($request, $acl->section, $acl->value);
-            return $handler(...$args);
+
+            // Start from a clean 200 baseline so the status read-back below
+            // reflects only what THIS handler set — never a code an earlier
+            // request/handler left on the process-global of the same worker
+            // (this also insulates handlers that set no status at all).
+            http_response_code(200);
+            $result = $handler(...$args);
+
+            // Honor an error status the handler signalled via
+            // http_response_code(): convert its array body into a typed
+            // JsonResponse the kernel renders verbatim (TRO-57), instead of
+            // letting the view-renderer force it to 200. A handler that
+            // returns its own Response, or an array on the success path
+            // (status 200), is passed through untouched — happy-path bodies
+            // and their 200 status are byte-for-byte unchanged.
+            if (is_array($result)) {
+                $status = http_response_code();
+                if (is_int($status) && $status >= 400) {
+                    // Reset so a converted error status cannot bleed into the
+                    // next handler served by the same worker.
+                    http_response_code(200);
+
+                    return new JsonResponse($result, $status);
+                }
+            }
+
+            return $result;
         };
     }
 
