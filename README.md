@@ -74,7 +74,7 @@ incl. seeding and known quirks:
 |---|---|
 | Week 2 architecture (ingestion, worker graph, RAG, eval gate, risks) | [`W2_ARCHITECTURE.md`](W2_ARCHITECTURE.md) |
 | Week 1 architecture / audit / user & use cases | [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`AUDIT.md`](AUDIT.md) · [`USERS.md`](USERS.md) |
-| Measured E2E latency + cost (production, 2026-07-16) | [`docs/W2_LATENCY_COST.md`](docs/W2_LATENCY_COST.md) |
+| Measured E2E latency + cost (production, 2026-07-16) | [`docs/W2_LATENCY_COST.md`](interface/modules/custom_modules/oe-module-copilot/docs/W2_LATENCY_COST.md) |
 | SLOs, measured baseline, circuit breakers, **RPO/RTO (as-built)** | [`docs/SLOS.md`](interface/modules/custom_modules/oe-module-copilot/docs/SLOS.md) |
 | Observability: logs/trace/alerts + the wired alert checker | [`docs/OBSERVABILITY.md`](interface/modules/custom_modules/oe-module-copilot/docs/OBSERVABILITY.md) |
 | API: OpenAPI 3.0 spec + Bruno collection | [`docs/openapi.yaml`](interface/modules/custom_modules/oe-module-copilot/docs/openapi.yaml) · [`bruno/`](interface/modules/custom_modules/oe-module-copilot/bruno/) |
