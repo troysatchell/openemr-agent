@@ -56,14 +56,19 @@ class GuardedRouteRegistrarStatusCodeTest extends TestCase
     /**
      * @param array<string, mixed> $body
      */
-    private function invoke(int $status, array $body): mixed
+    private function invoke(?int $status, array $body): mixed
     {
+        // A null status models a handler that sets no code at all (the real
+        // success path, e.g. /ping) — distinct from a handler that explicitly
+        // sets 200.
         $registrar = new GuardedRouteRegistrar($this->allowingAuthorization());
         $registrar->register(
             'POST /api/copilot/thing',
             new AclRequirement('patients', 'med'),
             static function (HttpRestRequest $request) use ($status, $body): array {
-                http_response_code($status);
+                if ($status !== null) {
+                    http_response_code($status);
+                }
 
                 return $body;
             }
@@ -128,7 +133,7 @@ class GuardedRouteRegistrarStatusCodeTest extends TestCase
     {
         // No http_response_code() set by the handler: the array must reach the
         // view-renderer as-is (the 200 success path), never wrapped.
-        $result = $this->invoke(200, ['status' => 'ok']);
+        $result = $this->invoke(null, ['status' => 'ok']);
 
         $this->assertIsArray($result);
         $this->assertSame(['status' => 'ok'], $result);
