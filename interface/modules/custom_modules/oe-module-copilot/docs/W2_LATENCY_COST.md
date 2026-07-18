@@ -11,8 +11,10 @@ production run, the development spend, and the bottleneck analysis:
   constants.
 - **Latency source of truth:** [`docs/SLOS.md`](SLOS.md) (TRO-47) — latency
   SLOs, alarm thresholds, circuit breakers, and the measured production
-  baseline (§0). This report is the "full methodology and per-step numbers"
-  that `SLOS.md` §0 points back to.
+  baseline (§0). This report supplies the methodology and per-flow numbers
+  that `SLOS.md` §0 points back to; live per-*step* percentiles (`llm`,
+  `retrieve`, ingestion) are derived on demand from the JSONL trace via
+  `bin/trace-dashboard.php` (`docs/OBSERVABILITY.md`), not tabulated here.
 
 Every number is labeled **MEASURED** (with its source), **ASSUMED** (a volume
 or token-profile assumption with no production data behind it yet), or
@@ -28,7 +30,10 @@ authorization-code exchange → guarded routes invoked with the launch-bound
 token. Two clocks captured for the *same* calls — client-observed `curl`
 wall-clock, and the server-side PHI-free JSONL trace
 (`bin/trace-dashboard.php`) for the identical requests. Small-n, single
-region/day; labeled as such, not presented as a load test.
+region/day. Percentiles are computed over the per-flow samples shown (n as
+tabulated) and are **indicative, not statistically stable production
+figures** — a p95 over n=6 sets the alarm ratchet, it does not certify
+capacity; a production-window measurement or load test supersedes it.
 
 ### Latency (p50 / p95)
 
@@ -62,8 +67,9 @@ region/day; labeled as such, not presented as a load test.
 
 **Implication.** p95 headroom is almost entirely a function of vendor
 answer-model latency. Against the turn `p95 > 15 s` alarm, the measured ~6 s
-clears with **2.5× headroom**, and `bin/alert-check.php` over the same trace
-reports all three alerts `ok`. The first latency lever at scale is the same one
+clears with **~2.5× headroom** (provisional, at the small n above — a ratchet
+for the alarm threshold, not a capacity guarantee), and `bin/alert-check.php`
+over the same trace reports all three alerts `ok`. The first latency lever at scale is the same one
 `COST_MODEL.md` §3 names for cost — **prompt caching + snapshot reuse** shrinks
 the LLM input (and therefore the dominant step's wall-clock), rather than
 adding request parallelism.
