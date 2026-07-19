@@ -55,26 +55,34 @@ php interface/modules/custom_modules/oe-module-copilot/bin/trace-dashboard.php [
 | Queue depth | N/A | there is no queue — the pre-chart is session-bound (no offline batch in v1, ARCHITECTURE §4) |
 | Cache hit rate | N/A until UC3 | the session-bound pre-chart (Wave 2) adds a `cache_hit` trace field; nothing caches today (every turn re-reads by design, §3.5) |
 
-## Alert definitions (graded deliverable — 3 alerts)
+## Alert definitions (graded deliverable)
 
-> Thresholds below are **provisional regression thresholds**. As of
-> 2026-07-16 they have a first measured production baseline
+Week 2 adds the three rubric-named alerts — **extraction failure rate**,
+**RAG retrieval latency**, and **eval regression (>5% category drop)** — on
+top of the three operational alerts carried from Week 1 (turn latency, turn
+error rate, LLM failure rate). Each entry states what fires, what it means,
+and what on-call does — the SHAPE is the deliverable.
+
+> Runtime thresholds below are **provisional regression thresholds**. As of
+> 2026-07-16 the turn path has a first measured production baseline
 > (`docs/SLOS.md` §0: turn p95 ≈ 6 s against the 15 s alarm — 2.5×
-> headroom); the 10/50-concurrent-user load-test baselines remain the
-> ratchet's next input. Ratchet: measure, set just below current
-> performance, raise as it improves. The SHAPE (what fires, what it means,
-> what on-call does) is the deliverable.
+> headroom); extraction and retrieval have no production volume yet, so
+> their thresholds are provisional and **PENDING calibration** (`docs/SLOS.md`
+> §2). Ratchet: measure, set just below current performance, raise as it
+> improves.
 
 ### Alert checker (wired)
 
-The three alerts below are **evaluated by a committed tool**, not just
+The runtime alerts below are **evaluated by a committed tool**, not just
 defined: `bin/alert-check.php` reads the same JSONL trace every turn
 writes, filters to a sliding window (default 15 min, matching the alert
-definitions; `--window=0` for the whole file), computes the three
-conditions via the tested `TraceDashboard` aggregator, prints
-`FIRING`/`ok` per alert with the measured value against its threshold, and
-exits non-zero when anything fires — so a cron line (or any scheduler) plus
-a notifier IS the alerting loop:
+definitions; `--window=0` for the whole file), computes each condition via
+the tested `TraceDashboard` aggregator, prints `FIRING`/`ok` per alert with
+the measured value against its threshold, and exits non-zero when anything
+fires — so a cron line (or any scheduler) plus a notifier IS the alerting
+loop. The checker leads with the two runtime rubric alerts (extraction
+failure rate, RAG retrieval latency) and names the third rubric alert (eval
+regression) as `[ CI ]`-enforced:
 
 ```
 */5 * * * * php .../oe-module-copilot/bin/alert-check.php || <notify on-call>
@@ -83,10 +91,51 @@ a notifier IS the alerting loop:
 Exit codes: `0` ok (including "no traffic in window" — absence of traffic
 is `/ready`'s job), `2` at least one alert firing, `1` trace unreadable.
 Verified against the real production trace on 2026-07-16 (6 grounded
-turns): all three alerts `ok`, exit 0; and against a synthetic breach
-trace: all three `FIRING`, exit 2.
+turns): every runtime alert `ok`, exit 0; and against a synthetic breach
+trace the operational alerts fire, exit 2.
 
-### 1. Turn latency p95 > 15s (15-min window)
+### Week 2 alerts (rubric)
+
+#### Extraction failure rate > 20% of extractions (provisional)
+- **Means:** the VLM document-extraction path is failing a large share of
+  uploads — a scanned lab/intake is being rejected rather than turned into
+  provenance-linked observations. Backed by `DashboardReport.ingestionFailureRate`
+  (`document-ingestion` failed-step fraction).
+- **On-call:** group `document-ingestion` failures by `error_class` in the
+  trace. A schema-violation class means the model output failed strict
+  validation (parse-don't-validate did its job — the extraction failed whole
+  rather than inventing fields); a transport/`LlmUnavailableException` class
+  means the vendor path is down (check the VLM circuit breaker + vendor
+  status). Uploads degrade honestly — no partial record is written. Threshold
+  provisional, PENDING production calibration (`docs/SLOS.md` §2); until then
+  the per-dependency breaker is the harder interim signal.
+
+#### RAG retrieval latency p95 > 10s (provisional)
+- **Means:** the evidence-retriever's leg (embed + rerank vendor calls) is
+  slow; an "include guideline evidence" turn stalls waiting on retrieval.
+  Backed by `DashboardReport.retrievalLatencyP95Ms` (p95 of the per-turn
+  `embed`+`rerank` duration).
+- **On-call:** split `embed` vs `rerank` per-step latency in the trace to
+  localize which vendor leg dominates; check Cohere status. Retrieval degrades
+  honestly (PS-12 asymmetric degradation) — a slow or absent reranker yields
+  worse evidence ordering, never a hung turn, and `/ready`'s `reranker` probe
+  reports `degraded` when the key is absent. Threshold provisional, PENDING
+  production calibration (`docs/SLOS.md` §2).
+
+#### Eval regression > 5% category drop (CI-enforced)
+- **Means:** a change dropped a boolean-rubric category's pass rate by more
+  than 5% (or below its floor) against the committed baseline — a real
+  clinical-accuracy regression heading for the demo.
+- **On-call / dev:** this is a **build-time** alert, not a runtime one: the
+  golden-set gate (`GoldenSetGateTest`, `clinical-accuracy-gate.yml`) fails
+  the PR. The response is to fix the regression, never to regenerate the
+  baseline or a fixture to green it (CLAUDE.md bright line). `alert-check.php`
+  names it as `[ CI ]` so the runtime checker still lists all three rubric
+  alerts.
+
+### Operational alerts (Week 1, retained)
+
+#### Turn latency p95 > 15s (15-min window)
 - **Means:** the between-patient-moment budget (PHASE0 §2 stipulation; first
   production baseline measured 2026-07-16 at p95 ≈ 6 s — `docs/SLOS.md` §0)
   is blown; the physician stops trusting the panel to be "glanceable" long
@@ -97,7 +146,7 @@ trace: all three `FIRING`, exit 2.
   DB load, P3 connection pooling is a known scale gap). The panel stays
   usable: detectors are code, only prose slows down.
 
-### 2. Turn error rate > 5% (15-min window)
+#### Turn error rate > 5% (15-min window)
 - **Means:** a dependency is failing. A failed `retrieve`/`detect`/
   `build_payload`/`disclose` step fails the whole turn (exception propagates);
   a failed `llm` step only degrades it.
@@ -107,7 +156,7 @@ trace: all three `FIRING`, exit 2.
   first. Cross-check `GET /api/copilot/ready` (`db`, `trace_sink`, `llm`
   probes name what's down).
 
-### 3. LLM failure rate > 10% of llm steps (15-min window)
+#### LLM failure rate > 10% of llm steps (15-min window)
 - **Means:** the model endpoint is unavailable or refusing — users see honest
   degradation (critical findings intact, answer absent). Safe but eroding:
   the panel's value proposition quietly halves.

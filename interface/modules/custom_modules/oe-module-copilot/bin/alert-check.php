@@ -1,9 +1,12 @@
 <?php
 
 /**
- * CLI alert checker — evaluates the three defined alerts
+ * CLI alert checker — evaluates the defined alerts
  * (docs/OBSERVABILITY.md §"Alert definitions") against the real trace,
- * over a sliding window, with a machine-usable exit code. This is the
+ * over a sliding window, with a machine-usable exit code. It leads with the
+ * three Week 2 rubric alerts — extraction failure rate, RAG retrieval
+ * latency, and eval regression (the last enforced in CI, named here for
+ * completeness) — then the retained operational alerts. This is the
  * wired counterpart to the alert SHAPES the observability doc commits to:
  * the same tested TraceDashboard aggregator the dashboard CLI uses, the
  * same JSONL trace every turn writes, evaluated on a schedule (cron) or
@@ -106,8 +109,35 @@ $llmSteps = $report->stepCounts['llm'] ?? 0;
 $llmFailures = $report->stepFailureCounts['llm'] ?? 0;
 $llmFailureRate = $llmSteps > 0 ? $llmFailures / $llmSteps : null;
 
+// Extraction failure rate is the document-ingestion (VLM extraction) flow's
+// failed-step fraction — the rubric's "extraction failure rate" by name.
+$extractionFailureRate = $report->ingestionFailureRate;
+
 /** @var list<array{name: string, firing: bool, detail: string}> $alerts */
 $alerts = [
+    // --- Week 2 rubric alerts (runtime, trace-derived) ---
+    [
+        'name' => 'extraction failure rate > 20%',
+        'firing' => $extractionFailureRate !== null && $extractionFailureRate > 0.20,
+        'detail' => $extractionFailureRate === null
+            ? 'no document extractions in window'
+            : sprintf(
+                '%.1f%% (%d extraction step(s)), threshold 20%% (provisional — PENDING production calibration)',
+                $extractionFailureRate * 100,
+                $report->ingestionCount,
+            ),
+    ],
+    [
+        'name' => 'RAG retrieval latency p95 > 10s',
+        'firing' => $report->retrievalLatencyP95Ms !== null && $report->retrievalLatencyP95Ms > 10000.0,
+        'detail' => $report->retrievalLatencyP95Ms === null
+            ? 'no evidence retrievals in window'
+            : sprintf(
+                'p95 %.0f ms (embed+rerank per turn), threshold 10000 ms (provisional — PENDING production calibration)',
+                $report->retrievalLatencyP95Ms,
+            ),
+    ],
+    // --- retained operational alerts ---
     [
         'name' => 'turn latency p95 > 15s',
         'firing' => $report->turnLatencyP95Ms !== null && $report->turnLatencyP95Ms > 15000.0,
@@ -139,6 +169,12 @@ foreach ($alerts as $alert) {
     $anyFiring = $anyFiring || $alert['firing'];
     echo sprintf("  [%s] %s — %s\n", $alert['firing'] ? 'FIRING' : '  ok  ', $alert['name'], $alert['detail']);
 }
+// The third Week 2 rubric alert — eval regression — is enforced at build
+// time, not from the trace: the golden-set gate fails the build when any
+// boolean-rubric category's pass rate drops > 5% (or below its floor). Named
+// here so the runtime checker lists all three rubric alerts by name; its
+// authority is CI, not this sliding window.
+echo "  [  CI  ] eval regression > 5% category drop — enforced by the golden-set gate in CI (GoldenSetGateTest); not a runtime trace metric\n";
 if ($report->malformedLineCount > 0) {
     echo sprintf("  note: %d malformed trace line(s) counted, never silently dropped\n", $report->malformedLineCount);
 }

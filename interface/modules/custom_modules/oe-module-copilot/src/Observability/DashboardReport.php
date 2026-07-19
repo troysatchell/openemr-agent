@@ -75,6 +75,11 @@ final readonly class DashboardReport
         public array $vendorCostUsd = [],
         public array $costUsdByCorrelation = [],
         public array $routesByCorrelation = [],
+        // RAG retrieval-leg latency: p95 of the per-turn embed+rerank duration
+        // (the evidence-retriever's two vendor calls), null when no retrieval
+        // happened in the window. Backs the rubric's "RAG retrieval latency"
+        // alert (docs/OBSERVABILITY.md).
+        public ?float $retrievalLatencyP95Ms = null,
     ) {
     }
 }
