@@ -178,8 +178,8 @@
   <!-- Chat composer moved below the answer stream and pinned to the bottom
        (chat-app convention): reading an answer then asking the next question
        stays one downward flow, and the input is always reachable. -->
-  <fieldset id="composer">
-    <div class="composer-title">Ask about this patient</div>
+  <fieldset id="composer" aria-labelledby="composer-title">
+    <div class="composer-title" id="composer-title">Ask about this patient</div>
     <textarea id="question" placeholder="e.g. Anything new on the potassium trend? Is the anticoagulation current?"></textarea>
     <label for="ask-evidence" class="evidence-toggle"><input type="checkbox" id="ask-evidence"> Include guideline evidence</label>
     <button id="ask">Ask</button>
@@ -712,7 +712,8 @@ function renderSnapshot(data) {
       const item = el("div", "claim");
       const value = (l.value === null || l.value === undefined) ? "(no numeric value)" : l.value;
       const unit = l.unit ? (" " + l.unit) : "";
-      const when = l.resulted_at ? (" — " + formatWhen(l.resulted_at)) : "";
+      const formattedWhen = formatWhen(l.resulted_at);
+      const when = formattedWhen ? (" — " + formattedWhen) : "";
       item.appendChild(el("div", null, l.analyte + ": " + value + unit + when));
       item.appendChild(refChips(l.refs));
       zone.appendChild(item);
