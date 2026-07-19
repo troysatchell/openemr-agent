@@ -126,6 +126,13 @@ final class DocumentIngestionService implements DocumentIngestion
 
         $mediaType = self::mediaTypeFor($filePath);
 
+        // Start the ingestion clock before the storage attach so the measured
+        // ingestion latency covers the full attach + extract + persist. A
+        // storage-level attach failure still propagates untraced — per §2's
+        // failure model that is a storage failure, not an extraction one.
+        $startedAt = new \DateTimeImmutable();
+        $startNs = hrtime(true);
+
         $attachment = $this->attacher->attach(
             $physician,
             $patientPid,
@@ -139,8 +146,6 @@ final class DocumentIngestionService implements DocumentIngestion
         // wiring, W2_ARCHITECTURE §6), so a fresh root span is minted here
         // purely to carry a correlation id through the disclosure + trace.
         $trace = TraceContext::start('document-ingestion', new \DateTimeImmutable());
-        $startedAt = new \DateTimeImmutable();
-        $startNs = hrtime(true);
         $failedResult = [
             'document_id' => (string) $attachment->documentId,
             'extraction_status' => 'extraction_failed',
