@@ -27,15 +27,20 @@ use PHPUnit\Framework\TestCase;
 
 class TraceDashboardRetrievalLatencyTest extends TestCase
 {
-    private static function line(string $correlationId, string $step, float $durationMs, string $outcome = 'ok'): string
+    private static function line(string $correlationId, string $step, ?float $durationMs, string $outcome = 'ok'): string
     {
-        return json_encode([
+        $row = [
             'correlation_id' => $correlationId,
             'step' => $step,
             'started_at' => '2026-07-18T09:00:00+00:00',
-            'duration_ms' => $durationMs,
             'outcome' => $outcome,
-        ], JSON_THROW_ON_ERROR);
+        ];
+        // A null duration models a trace line with no measurable duration_ms.
+        if ($durationMs !== null) {
+            $row['duration_ms'] = $durationMs;
+        }
+
+        return json_encode($row, JSON_THROW_ON_ERROR);
     }
 
     public function testRetrievalLatencyP95SumsEmbedAndRerankPerTurn(): void
@@ -64,6 +69,16 @@ class TraceDashboardRetrievalLatencyTest extends TestCase
         ]);
 
         $report = (new TraceDashboard())->summarize($jsonl);
+
+        $this->assertNull($report->retrievalLatencyP95Ms);
+    }
+
+    public function testRetrievalLatencyIgnoresALegWithNoDuration(): void
+    {
+        // The only retrieval leg has no duration_ms: it must not register a
+        // spurious 0 ms measurement — the metric stays null (unmeasurable is
+        // not zero), so the alert never fires on a phantom fast retrieval.
+        $report = (new TraceDashboard())->summarize(self::line('turn-a', 'embed', null));
 
         $this->assertNull($report->retrievalLatencyP95Ms);
     }

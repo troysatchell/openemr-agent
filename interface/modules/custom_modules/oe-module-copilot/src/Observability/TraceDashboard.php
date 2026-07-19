@@ -151,13 +151,12 @@ final readonly class TraceDashboard
             // The RAG retrieval leg is the evidence-retriever's two vendor
             // calls; sum their durations per turn so retrieval latency is one
             // number per retrieval, mirroring the per-turn latency roll-up.
-            if ($step === 'embed' || $step === 'rerank') {
-                if (is_int($duration) || is_float($duration)) {
-                    $retrievalDurationsByCorrelation[$correlationId] =
-                        ($retrievalDurationsByCorrelation[$correlationId] ?? 0.0) + (float) $duration;
-                } else {
-                    $retrievalDurationsByCorrelation[$correlationId] ??= 0.0;
-                }
+            // Only a numeric duration counts — a leg with no measurable
+            // duration must not register a spurious 0 ms retrieval
+            // (unmeasurable is not zero).
+            if (($step === 'embed' || $step === 'rerank') && (is_int($duration) || is_float($duration))) {
+                $retrievalDurationsByCorrelation[$correlationId] =
+                    ($retrievalDurationsByCorrelation[$correlationId] ?? 0.0) + (float) $duration;
             }
 
             if (str_starts_with($step, 'handoff.')) {
