@@ -125,7 +125,10 @@
      below the answer stream (chat-app convention) and stays reachable while
      the answer above scrolls. Falls back to a normal block if sticky is
      unsupported. */
-  #composer { position: sticky; bottom: 8px; z-index: 5; box-shadow: 0 6px 20px rgba(20,40,60,.10); }
+  #composer { position: sticky; bottom: 8px; z-index: 5; background:#fff; box-shadow: 0 6px 20px rgba(20,40,60,.10); }
+  /* Title lives inside the composer card (not on the border like a fieldset
+     legend), so the pinned card never lets it overlap the content behind it. */
+  #composer .composer-title { font-size:12px; color:var(--mut); text-transform:uppercase; letter-spacing:.04em; font-weight:600; margin:0 0 8px; }
 </style>
 </head>
 <body>
@@ -175,8 +178,8 @@
   <!-- Chat composer moved below the answer stream and pinned to the bottom
        (chat-app convention): reading an answer then asking the next question
        stays one downward flow, and the input is always reachable. -->
-  <fieldset id="composer">
-    <legend>Ask about this patient</legend>
+  <fieldset id="composer" aria-labelledby="composer-title">
+    <div class="composer-title" id="composer-title">Ask about this patient</div>
     <textarea id="question" placeholder="e.g. Anything new on the potassium trend? Is the anticoagulation current?"></textarea>
     <label for="ask-evidence" class="evidence-toggle"><input type="checkbox" id="ask-evidence"> Include guideline evidence</label>
     <button id="ask">Ask</button>
@@ -209,6 +212,17 @@ function el(tag, cls, text) {
   if (cls) node.className = cls;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+// Format a chart timestamp for display. Chart datetimes are stored UTC; show a
+// clean calendar date (the "new labs since last visit" list is about which day,
+// not the second) rather than the raw ISO string. An unparseable value is
+// returned untouched (D6: never silently drop or corrupt a date we can't read).
+function formatWhen(value) {
+  if (typeof value !== "string" || value.trim() === "") return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleDateString(undefined, { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" });
 }
 
 async function apiPost(path, payload) {
@@ -698,7 +712,8 @@ function renderSnapshot(data) {
       const item = el("div", "claim");
       const value = (l.value === null || l.value === undefined) ? "(no numeric value)" : l.value;
       const unit = l.unit ? (" " + l.unit) : "";
-      const when = l.resulted_at ? (" — " + l.resulted_at) : "";
+      const formattedWhen = formatWhen(l.resulted_at);
+      const when = formattedWhen ? (" — " + formattedWhen) : "";
       item.appendChild(el("div", null, l.analyte + ": " + value + unit + when));
       item.appendChild(refChips(l.refs));
       zone.appendChild(item);
