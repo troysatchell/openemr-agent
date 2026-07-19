@@ -116,6 +116,8 @@
   .ref.ref-chart { background:#eef1f5; border-color:var(--line); color:#33475c; }
   .ref:focus-visible { outline:2px solid #20476b; outline-offset:1px; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
+  a.chart-jump { display:inline-block; margin-top:8px; font-size:12px; font-weight:600; color:var(--guide); text-decoration:none; }
+  a.chart-jump:hover { text-decoration:underline; }
   #doc-preview { position:relative; margin-top:10px; display:inline-block; }
   #doc-preview canvas { display:block; max-width:100%; border:1px solid var(--line); border-radius:6px; }
   .bbox-overlay { position:absolute; border:2px solid var(--crit); background:rgba(179,38,30,.12); pointer-events:none; }
@@ -188,6 +190,11 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const priorTurns = [];
+// Trusted pid (D7: trust pid, not uuid) captured from the on-arrival snapshot,
+// so a resolved chart-record citation can offer a jump into this patient's
+// chart in the physician's own OpenEMR session (read-only navigation, never a
+// new grant — they launched from this chart).
+let launchedPatientPid = null;
 
 // The vendored legacy UMD build exposes the global `pdfjsLib`; point its
 // worker at the vendored worker file — never a CDN — before any getDocument()
@@ -329,6 +336,28 @@ async function renderDocumentPreview(preview, container) {
   }
 }
 
+// set_pid is OpenEMR's own "open this patient's record" mechanism; it opens
+// the chart summary in a new tab in the physician's session — the record in
+// context, not an exact-row jump. Null until the snapshot supplies the pid.
+function chartLinkFor() {
+  if (!launchedPatientPid) return null;
+  return "/interface/patient_file/summary/demographics.php?set_pid=" + encodeURIComponent(launchedPatientPid);
+}
+
+// For a citation that grounds to a chart record (a panic lab, a medication,
+// an allergy…), offer a jump into the patient's chart alongside the in-panel
+// source preview — click-to-source stays, and the physician can still reach
+// the chart they expected.
+function appendChartLink(box) {
+  const href = chartLinkFor();
+  if (!href) return;
+  const link = el("a", "chart-jump", "View in patient chart ↗");
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  box.appendChild(link);
+}
+
 // Renders one resolved source preview by type — minimum-necessary fields
 // only, matching exactly what SourceResolverEndpoint returns for that type.
 function renderSourcePreview(preview) {
@@ -357,10 +386,12 @@ function renderSourcePreview(preview) {
   }
   if (preview.type === "detector") {
     box.appendChild(el("div", "claim", preview.label + " (" + preview.finding_id + ")"));
+    appendChartLink(box);
     return;
   }
   if (preview.type === "chart") {
     box.appendChild(el("div", "claim", preview.source_type + ": " + preview.source_id));
+    appendChartLink(box);
     return;
   }
   box.appendChild(el("div", "banner error", "Unrecognized source preview."));
@@ -595,6 +626,11 @@ async function loadSnapshot() {
   box.replaceChildren(el("div", "hint", "Reading the live chart…"));
   try {
     const data = await apiPost("/api/copilot/snapshot", { patient_uuid: uuid });
+    // Capture the trusted pid so citation previews can link into this
+    // patient's chart (same source of truth the in-EMR tab uses).
+    if (data && data.snapshot && data.snapshot.patient && data.snapshot.patient.pid) {
+      launchedPatientPid = data.snapshot.patient.pid;
+    }
     renderSnapshot(data);
   } catch (e) {
     box.replaceChildren(el("div", "banner error", e.message || "The snapshot could not be read."));
