@@ -916,6 +916,10 @@ class Bootstrap
             AnthropicLlmClient::DEFAULT_MODEL,
         );
 
-        return new DocumentIngestionService(new PatientDocumentAttacher(), $extractor);
+        return new DocumentIngestionService(
+            new PatientDocumentAttacher(),
+            $extractor,
+            new JsonlTraceRecorder(self::defaultTracePath()),
+        );
     }
 }
