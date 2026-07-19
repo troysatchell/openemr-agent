@@ -63,7 +63,11 @@ use OpenEMR\Modules\Copilot\Extraction\IntakeFormExtraction;
 use OpenEMR\Modules\Copilot\Extraction\LabPdfExtraction;
 use OpenEMR\Modules\Copilot\Extraction\VlmExtractionParser;
 use OpenEMR\Modules\Copilot\Llm\LlmUnavailableException;
+use OpenEMR\Modules\Copilot\Observability\NullTraceRecorder;
+use OpenEMR\Modules\Copilot\Observability\StepOutcome;
+use OpenEMR\Modules\Copilot\Observability\StepRecord;
 use OpenEMR\Modules\Copilot\Observability\TraceContext;
+use OpenEMR\Modules\Copilot\Observability\TraceRecorder;
 use OpenEMR\Modules\Copilot\Persistence\DerivedObservationWriter;
 use OpenEMR\Modules\Copilot\Persistence\IntakeCandidateWriter;
 
@@ -79,10 +83,17 @@ final class DocumentIngestionService implements DocumentIngestion
      */
     private const ALLOWED_DOC_TYPES = ['lab_pdf', 'intake_form'];
 
+    private readonly TraceRecorder $traceRecorder;
+
     public function __construct(
         private readonly PatientDocumentAttacher $attacher,
         private readonly VlmDocumentExtractor $extractor,
+        ?TraceRecorder $traceRecorder = null,
     ) {
+        // Optional so the frozen TRO-32 test (which never asserts the trace)
+        // constructs it two-arg; production wires the real recorder in
+        // Bootstrap so the ingestion metrics have data.
+        $this->traceRecorder = $traceRecorder ?? new NullTraceRecorder();
     }
 
     /**
@@ -115,6 +126,13 @@ final class DocumentIngestionService implements DocumentIngestion
 
         $mediaType = self::mediaTypeFor($filePath);
 
+        // Start the ingestion clock before the storage attach so the measured
+        // ingestion latency covers the full attach + extract + persist. A
+        // storage-level attach failure still propagates untraced — per §2's
+        // failure model that is a storage failure, not an extraction one.
+        $startedAt = new \DateTimeImmutable();
+        $startNs = hrtime(true);
+
         $attachment = $this->attacher->attach(
             $physician,
             $patientPid,
@@ -128,6 +146,10 @@ final class DocumentIngestionService implements DocumentIngestion
         // wiring, W2_ARCHITECTURE §6), so a fresh root span is minted here
         // purely to carry a correlation id through the disclosure + trace.
         $trace = TraceContext::start('document-ingestion', new \DateTimeImmutable());
+        $failedResult = [
+            'document_id' => (string) $attachment->documentId,
+            'extraction_status' => 'extraction_failed',
+        ];
 
         try {
             $rawExtraction = $this->extractor->extract(
@@ -140,31 +162,54 @@ final class DocumentIngestionService implements DocumentIngestion
                 $trace,
                 new \DateTimeImmutable(),
             );
-        } catch (LlmUnavailableException) {
-            return [
-                'document_id' => (string) $attachment->documentId,
-                'extraction_status' => 'extraction_failed',
-            ];
+        } catch (LlmUnavailableException $e) {
+            $this->recordIngestionStep($trace, $startedAt, $startNs, StepOutcome::Failed, $e::class);
+
+            return $failedResult;
         }
 
         try {
-            if ($docType === 'lab_pdf') {
-                return $this->persistLabPdf($physician, $patientPid, $attachment->documentId, $rawExtraction);
-            }
-
-            return $this->persistIntakeForm($physician, $patientPid, $attachment->documentId, $rawExtraction);
-        } catch (ExtractionParseException | \DomainException) {
+            $result = $docType === 'lab_pdf'
+                ? $this->persistLabPdf($physician, $patientPid, $attachment->documentId, $rawExtraction)
+                : $this->persistIntakeForm($physician, $patientPid, $attachment->documentId, $rawExtraction);
+        } catch (ExtractionParseException | \DomainException $e) {
             // Schema violation OR "nothing persistable" — both mean the
             // extraction failed to produce anything usefully groundable.
             // The document stays attached (already inserted above);
             // extraction is retryable (§2). A genuine \RuntimeException
             // (writer transaction failure) is deliberately NOT caught here
             // — it propagates as a storage failure, not an extraction one.
-            return [
-                'document_id' => (string) $attachment->documentId,
-                'extraction_status' => 'extraction_failed',
-            ];
+            $this->recordIngestionStep($trace, $startedAt, $startNs, StepOutcome::Failed, $e::class);
+
+            return $failedResult;
         }
+
+        // Emit the 'document-ingestion' trace step so the observability
+        // dashboard's ingestion count / p95 latency / failure-rate metrics
+        // actually have data (W2_ARCHITECTURE §8; the dashboard and its tests
+        // key these off this exact step name — it was never being emitted).
+        $this->recordIngestionStep($trace, $startedAt, $startNs, StepOutcome::Ok, null);
+
+        return $result;
+    }
+
+    private function recordIngestionStep(
+        TraceContext $trace,
+        \DateTimeImmutable $startedAt,
+        int $startNs,
+        StepOutcome $outcome,
+        ?string $errorClass,
+    ): void {
+        $this->traceRecorder->record(
+            $trace,
+            new StepRecord(
+                'document-ingestion',
+                $startedAt,
+                (hrtime(true) - $startNs) / 1_000_000.0,
+                $outcome,
+                $errorClass,
+            ),
+        );
     }
 
     /**
