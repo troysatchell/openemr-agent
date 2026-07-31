@@ -208,7 +208,13 @@ class Bootstrap
                     // no heavy IO) against core's native document table —
                     // write (a) of the two-write amendment lands there.
                     'document-storage' => static function (): bool {
-                        return QueryUtils::fetchRecords('SHOW TABLES LIKE ?', ['documents']) !== [];
+                        // information_schema, not SHOW ... LIKE ?: the live
+                        // MariaDB driver refuses placeholders in SHOW
+                        // statements (found on the deployed /ready).
+                        return QueryUtils::fetchRecords(
+                            'SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?',
+                            ['documents'],
+                        ) !== [];
                     },
                     // Same cheap metadata-only check against the module-owned
                     // corpus chunk table (CorpusIndexSchema) — existence only,
@@ -217,8 +223,13 @@ class Bootstrap
                         // Dense retrieval needs the embeddings, not just the
                         // chunk text — probe both so a partial install can
                         // never report ready and fail on retrieval.
-                        return QueryUtils::fetchRecords('SHOW TABLES LIKE ?', [CorpusIndexSchema::CHUNK_TABLE]) !== []
-                            && QueryUtils::fetchRecords('SHOW TABLES LIKE ?', [CorpusIndexSchema::EMBEDDING_TABLE]) !== [];
+                        $tableExists = static fn (string $table): bool => QueryUtils::fetchRecords(
+                            'SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?',
+                            [$table],
+                        ) !== [];
+
+                        return $tableExists(CorpusIndexSchema::CHUNK_TABLE)
+                            && $tableExists(CorpusIndexSchema::EMBEDDING_TABLE);
                     },
                     // Missing key degrades evidence honestly (PS-12) rather
                     // than failing the whole turn — 'degraded', never
